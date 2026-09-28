@@ -1,0 +1,19 @@
+{
+  "name": "freckles-companion",
+  "version": "0.2.0",
+  "description": "Every step your agent finishes becomes a version with a picture of your app, kept and published by Freckles.",
+  "type": "module",
+  "bin": {
+    "freckles-companion": "plugin/dist/companion.mjs"
+  },
+  "files": [
+    "plugin"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "playwright": "^1.63.0"
+  },
+  "homepage": "https://frecklescloud.com"
+}

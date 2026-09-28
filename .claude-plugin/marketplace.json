@@ -1,0 +1,16 @@
+{
+  "name": "freckles",
+  "owner": {
+    "name": "Freckles",
+    "url": "https://frecklescloud.com"
+  },
+  "description": "Freckles for Claude Code: versions with pictures, publishing and your app's cloud, in plain words.",
+  "plugins": [
+    {
+      "name": "freckles",
+      "source": "./plugin",
+      "description": "Every step your agent finishes becomes a version with a picture of your app, kept and published by Freckles.",
+      "version": "0.2.0"
+    }
+  ]
+}
