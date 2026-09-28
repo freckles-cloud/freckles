@@ -1,8 +1,11 @@
 {
   "mcpServers": {
     "freckles": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/companion.mjs"]
+      "command": "npx",
+      "args": [
+        "-y",
+        "github:freckles-cloud/freckles"
+      ]
     }
   }
 }

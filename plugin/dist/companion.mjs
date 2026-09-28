@@ -23985,7 +23985,6 @@ function limitStatus(limit, spentMinor2) {
 // packages/shots/src/index.ts
 import { mkdir as mkdir3 } from "node:fs/promises";
 import { join as join4 } from "node:path";
-import { chromium } from "playwright";
 
 // packages/shots/src/serve.ts
 import { createServer } from "node:http";
@@ -24109,6 +24108,12 @@ var import_pngjs = __toESM(require_png(), 1);
 
 // packages/shots/src/index.ts
 async function launch() {
+  let chromium;
+  try {
+    ({ chromium } = await import("playwright"));
+  } catch {
+    throw new Error("the picture-taking part of Freckles isn't installed on this computer. Versions are still saved.");
+  }
   const tries = [{}, { channel: "chrome" }, { channel: "msedge" }];
   let last;
   for (const options of tries) {
@@ -25434,7 +25439,7 @@ var ownAzure = {
 };
 
 // packages/mcp/src/index.ts
-var server = new McpServer({ name: "freckles", version: "0.2.0" }, { instructions: INSTRUCTIONS });
+var server = new McpServer({ name: "freckles", version: "0.2.1" }, { instructions: INSTRUCTIONS });
 var provider = new ThisComputer(process.env.CFP_ORIGIN ?? "http://localhost:4300");
 var appRef = external_exports.string().describe("The app: either the path to its folder, or the short id shown by list_apps.");
 async function resolveApp(ref) {
