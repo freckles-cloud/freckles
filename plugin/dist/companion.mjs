@@ -24872,8 +24872,30 @@ async function findExisting() {
     const others = group.filter((r) => r.name !== site.name);
     if (others.length) app.alongside = others.map((r) => ({ kind: KIND[r.type.toLowerCase()] ?? "other", name: r.name, type: r.type }));
   }
+  const queue2 = [...apps];
+  await Promise.all(
+    Array.from({ length: 5 }, async () => {
+      for (let a = queue2.shift(); a; a = queue2.shift()) a.history = await recentChanges(a.repo.fullName, a.repo.branch);
+    })
+  );
   apps.sort((a, b) => Number(!!b.site) - Number(!!a.site) || b.repo.pushedAt.localeCompare(a.repo.pushedAt));
   return { github: who?.login, azure: subs.map((s) => s.name), apps };
+}
+function plainSummary(title) {
+  const t = title.trim().replace(/^[a-z]+(\([^)]*\))?!?:\s*/i, "");
+  return t ? t[0].toUpperCase() + t.slice(1) : title.trim();
+}
+async function recentChanges(fullName, branch) {
+  const list3 = await json("gh", [
+    "api",
+    `repos/${fullName}/commits?per_page=30&sha=${encodeURIComponent(branch)}`
+  ]);
+  return (list3 ?? []).map((c) => ({
+    sha: c.sha,
+    at: c.commit.author.date,
+    summary: plainSummary(c.commit.message.split("\n")[0] ?? "").slice(0, 200),
+    author: c.commit.author.name
+  }));
 }
 
 // packages/publish/src/index.ts
@@ -25439,7 +25461,7 @@ var ownAzure = {
 };
 
 // packages/mcp/src/index.ts
-var server = new McpServer({ name: "freckles", version: "0.2.1" }, { instructions: INSTRUCTIONS });
+var server = new McpServer({ name: "freckles", version: "0.2.2" }, { instructions: INSTRUCTIONS });
 var provider = new ThisComputer(process.env.CFP_ORIGIN ?? "http://localhost:4300");
 var appRef = external_exports.string().describe("The app: either the path to its folder, or the short id shown by list_apps.");
 async function resolveApp(ref) {
