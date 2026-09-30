@@ -231,8 +231,11 @@ async function whatsNew(appId) {
 }
 function describeEvents(events) {
   if (!events.length) return "Nothing new from Freckles.";
-  return events.map((e) => `${e.level === "problem" ? "PROBLEM" : e.level === "attention" ? "Needs attention" : "Note"} (${e.at}): ${e.human}
-  Detail for the agent: ${e.agent}`).join("\n");
+  return events.map(
+    (e) => e.level === "request" ? `REQUEST FROM THE PERSON, queued on the Freckles page (${e.at}): ${e.agent}
+  Tell them you've got it and confirm before acting; if it adds cost, say how much first.` : `${e.level === "problem" ? "PROBLEM" : e.level === "attention" ? "Needs attention" : "Note"} (${e.at}): ${e.human}
+  Detail for the agent: ${e.agent}`
+  ).join("\n");
 }
 
 // packages/mcp/src/hook.ts
