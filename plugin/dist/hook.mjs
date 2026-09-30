@@ -224,17 +224,31 @@ async function api(c, method, path, body) {
   }
   return data;
 }
+async function linkTo(path) {
+  const c = await readConfig();
+  if (!c.token) return void 0;
+  try {
+    return (await api(c, "POST", "/api/v1/links", { path })).url;
+  } catch {
+    return `${c.url}${path}`;
+  }
+}
 async function whatsNew(appId) {
   const c = await readConfig();
   if (!c.token) return [];
-  return api(c, "GET", `/api/v1/events${appId ? `?app=${appId}` : ""}`);
+  const events = await api(c, "GET", `/api/v1/events${appId ? `?app=${appId}` : ""}`);
+  for (const e of events.filter((x) => x.appId && (x.level === "problem" || x.level === "attention")).slice(0, 3)) {
+    e.link = await linkTo(`/apps/${encodeURIComponent(e.appId)}`).catch(() => void 0);
+  }
+  return events;
 }
 function describeEvents(events) {
   if (!events.length) return "Nothing new from Freckles.";
   return events.map(
     (e) => e.level === "request" ? `REQUEST FROM THE PERSON, queued on the Freckles page (${e.at}): ${e.agent}
   Tell them you've got it and confirm before acting; if it adds cost, say how much first.` : `${e.level === "problem" ? "PROBLEM" : e.level === "attention" ? "Needs attention" : "Note"} (${e.at}): ${e.human}
-  Detail for the agent: ${e.agent}`
+  Detail for the agent: ${e.agent}${e.link ? `
+  Its page in Freckles, to offer the person (signs them in, works once for five minutes): ${e.link}` : ""}`
   ).join("\n");
 }
 

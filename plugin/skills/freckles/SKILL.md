@@ -46,6 +46,14 @@ Never run `git commit`, `git push` or `git checkout` yourself for this app: `sav
   you go on to propose it.
 - After publishing, call `whats_new`: some problems only appear while the app is being built.
 
+## Links into Freckles
+
+- After a save that changes something the person can see, after publishing, or when something
+  breaks, tools return a link to that exact page: the version next to the one before it, or the
+  app that needs attention. It signs them in on the way, once, within five minutes.
+- Offer it at that natural pause, in one line: "Saved version 12. See it next to version 11?"
+  Don't offer it for saves nobody can see, and never interrupt them with it while they're building.
+
 ## Leaving is always possible
 
 - "Take my app with me", "I want it in my own GitHub": `take_it_with_you` with an owner/name on

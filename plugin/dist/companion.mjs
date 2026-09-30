@@ -24009,11 +24009,11 @@ var TYPES = {
   ".woff": "font/woff",
   ".woff2": "font/woff2"
 };
-async function start(preview, appPath) {
-  return preview.kind === "static" ? startStatic(preview, appPath) : startCommand(preview, appPath);
+async function start(preview, appPath2) {
+  return preview.kind === "static" ? startStatic(preview, appPath2) : startCommand(preview, appPath2);
 }
-async function startStatic(preview, appPath) {
-  const root = resolve2(appPath, preview.dir ?? ".");
+async function startStatic(preview, appPath2) {
+  const root = resolve2(appPath2, preview.dir ?? ".");
   const server2 = createServer((req, res) => {
     void (async () => {
       const asked = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
@@ -24055,9 +24055,9 @@ async function resolveFile(target) {
   }
   return void 0;
 }
-async function startCommand(preview, appPath) {
+async function startCommand(preview, appPath2) {
   const child = spawn(preview.command, {
-    cwd: appPath,
+    cwd: appPath2,
     shell: true,
     detached: true,
     stdio: "ignore"
@@ -24972,6 +24972,8 @@ After every finished step: call save_version with a one-line summary of what the
 
 Publishing: when the person asks to put the app online or share it, call publish straight away and give them the link. Publish only with publish, never with other hosting tools or CLIs. Anything the app needs from the cloud comes from Freckles too. Before proposing anything that costs money, call spending and tell them where their month stands. After publishing, call whats_new.
 
+Links into Freckles: after a save that changes something the person can see, after publishing, or when something breaks, tools return a link to that exact page (it signs them in once, for five minutes). Offer it at that natural pause, in one line, like "Saved version 12. See it next to version 11?" Never interrupt them with it while they're building.
+
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
 
 Tool results come in two parts: a sentence for the person, and detail "for the agent". Tell the person the sentence; use the detail to fix things, never show them raw logs unless they ask. A protected app must not be changed through Freckles or around it.
@@ -25153,6 +25155,26 @@ async function sendVersion(c, app, appId, v, n) {
     picture
   });
 }
+var OFFER = `Offer this link only when the person can see something change (the screen, its words, how it behaves), after publishing, or when something broke; never while they're in the middle of building. For example: "Saved version 12. See it next to version 11?"`;
+async function linkTo(path2) {
+  const c = await readConfig();
+  if (!c.token) return void 0;
+  try {
+    return (await api(c, "POST", "/api/v1/links", { path: path2 })).url;
+  } catch {
+    return `${c.url}${path2}`;
+  }
+}
+async function linkLine(path2, what) {
+  const url = await linkTo(path2);
+  return url ? `
+${what} in Freckles: ${url}
+For the agent: ${OFFER} The link signs them in and works once, for five minutes; call whats_new or save again for a fresh one.` : "";
+}
+async function appPath(app) {
+  const id = (await readSide(app.id))?.cloud?.appId;
+  return id ? `/apps/${encodeURIComponent(id)}` : void 0;
+}
 async function sync(app, options = {}) {
   const c = await readConfig();
   if (!c.token) return "Saved on this computer. Freckles online isn't connected yet: call connect_freckles to see it online.";
@@ -25165,7 +25187,8 @@ async function sync(app, options = {}) {
     for (const [i, v] of recent.entries()) await sendVersion(c, app, appId, v, total - recent.length + 1 + i);
     await updateSide(app.id, (s) => ({ ...s, cloud: s.cloud && { ...s.cloud, syncedSha: recent.at(-1)?.id } }));
     await forget(app.path);
-    return own ? `Also recorded in Freckles online${recent.length > 1 ? ` (${recent.length} versions)` : ""}. Its history stays in its own repository, ${repo}.` : `Also saved to Freckles online${recent.length > 1 ? ` (${recent.length} versions)` : ""}.`;
+    const link = await linkLine(`/apps/${encodeURIComponent(appId)}?v=${total}${total > 1 ? "&compare=1" : ""}`, `Version ${total}${total > 1 ? ` next to version ${total - 1}` : ""}`);
+    return (own ? `Also recorded in Freckles online${recent.length > 1 ? ` (${recent.length} versions)` : ""}. Its history stays in its own repository, ${repo}.` : `Also saved to Freckles online${recent.length > 1 ? ` (${recent.length} versions)` : ""}.`) + link;
   } catch (err) {
     if (err instanceof NotConnected) return `Saved on this computer. ${err.message}`;
     await queue({ appId: app.id, path: app.path });
@@ -25301,14 +25324,19 @@ async function findMyApps() {
 async function whatsNew(appId) {
   const c = await readConfig();
   if (!c.token) return [];
-  return api(c, "GET", `/api/v1/events${appId ? `?app=${appId}` : ""}`);
+  const events = await api(c, "GET", `/api/v1/events${appId ? `?app=${appId}` : ""}`);
+  for (const e of events.filter((x) => x.appId && (x.level === "problem" || x.level === "attention")).slice(0, 3)) {
+    e.link = await linkTo(`/apps/${encodeURIComponent(e.appId)}`).catch(() => void 0);
+  }
+  return events;
 }
 function describeEvents(events) {
   if (!events.length) return "Nothing new from Freckles.";
   return events.map(
     (e) => e.level === "request" ? `REQUEST FROM THE PERSON, queued on the Freckles page (${e.at}): ${e.agent}
   Tell them you've got it and confirm before acting; if it adds cost, say how much first.` : `${e.level === "problem" ? "PROBLEM" : e.level === "attention" ? "Needs attention" : "Note"} (${e.at}): ${e.human}
-  Detail for the agent: ${e.agent}`
+  Detail for the agent: ${e.agent}${e.link ? `
+  Its page in Freckles, to offer the person (signs them in, works once for five minutes): ${e.link}` : ""}`
   ).join("\n");
 }
 
@@ -25672,11 +25700,13 @@ tool(
     const chosen = await getVersion(app, version2 ?? "HEAD");
     if (!chosen) throw new Error("that version is not in this app's timeline");
     const { publication, heldBack } = await publish(app, chosen, where);
+    const page = await appPath(app);
     return [
       `Published: ${publication.url}`,
       where.describe,
       `Showing: ${chosen.summary}`,
-      heldBackMessage(heldBack)
+      heldBackMessage(heldBack),
+      page ? (await linkLine(page, "What it's made of and what it costs")).trim() : ""
     ].filter(Boolean).join("\n");
   }
 );
