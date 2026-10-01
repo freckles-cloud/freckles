@@ -32258,7 +32258,7 @@ What the person did on the Freckles page (a spending limit, a request they sent 
 
 Links into Freckles: after a save that changes something the person can see, after publishing, or when something breaks, tools return a link to that exact page (it signs them in once, for five minutes). Offer it at that natural pause, in one line, like "Saved version 12. See it next to version 11?" Never interrupt them with it while they're building.
 
-Showing the app: after a change the person can see, or when they ask "show me", call show_timeline. Hosts that can draw it show a small timeline with pictures inside the chat; the others get one status line and the link.
+Showing the app: after a change the person can see, or when they ask "show me", call show_timeline. Hosts that can draw it show a small timeline with pictures inside the chat; the others get a short table and the link. Show it as it is, with nothing before or after it unless something needs the person to decide.
 
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
 
@@ -32864,12 +32864,22 @@ var TIMELINE_HTML = `<!doctype html>
   .when { margin-left: auto; color: var(--muted); font-size: 11px; }
   .summary { margin: 4px 0 0; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .empty { color: var(--muted); }
+  button.quiet { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  li { position: relative; }
+  .card { display: block; width: 100%; padding: 0; white-space: normal; background: none; color: inherit; font-weight: 400; border-radius: 0; text-align: left; }
+  .card:hover .pic { opacity: .9; }
+  .here { white-space: nowrap; font-size: 11px; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
+  .flag { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .acts { display: flex; gap: 6px; padding: 0 8px 8px; }
+  .acts button { flex: 1; font-size: 12px; padding: 4px 6px; background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+  .acts button:hover { border-color: var(--accent); }
 </style>
 </head>
 <body>
 <main>
   <header>
     <div><h1 id="name">Timeline</h1><p id="status">Loading\u2026</p></div>
+    <button id="share" type="button" class="quiet" hidden title="Open the published app: this address is safe to send to people">Share</button>
     <button id="open" type="button" hidden>Open in Freckles</button>
   </header>
   <ol id="versions"></ol>
@@ -32879,6 +32889,20 @@ var TIMELINE_HTML = `<!doctype html>
   var nextId = 1;
   var waiting = {};
   var link = "";
+  var page = "";
+
+  // One sign-in link from Freckles, pointed at another version of the same app.
+  function linkFor(path) {
+    if (!link) return "";
+    try { var u = new URL(link); u.searchParams.set("to", path); return u.toString(); } catch (e) { return link; }
+  }
+  function open(url) {
+    if (!url) return;
+    request("ui/open-link", { url: url }).catch(function () { window.open(url, "_blank", "noopener"); });
+  }
+  function say(text) {
+    request("ui/message", { role: "user", content: [{ type: "text", text: text }] }).catch(function () {});
+  }
 
   function send(message) { window.parent.postMessage(message, "*"); }
   function request(method, params) {
@@ -32913,7 +32937,13 @@ var TIMELINE_HTML = `<!doctype html>
     document.getElementById("name").textContent = data.app || "Timeline";
     document.getElementById("status").textContent = data.status || text.split("\\n")[0];
     link = typeof data.link === "string" ? data.link : "";
+    page = typeof data.page === "string" ? data.page : "";
+    var pictures = (result && result._meta && result._meta["freckles/pictures"]) || {};
     document.getElementById("open").hidden = !link;
+    var share = typeof data.share === "string" ? data.share : "";
+    var shareBtn = document.getElementById("share");
+    shareBtn.hidden = !share;
+    shareBtn.onclick = function () { open(share); };
 
     var list = document.getElementById("versions");
     list.textContent = "";
@@ -32921,30 +32951,54 @@ var TIMELINE_HTML = `<!doctype html>
     if (!versions.length) list.appendChild(el("li", "empty body", "No versions yet."));
     versions.forEach(function (v) {
       var card = el("li", v.live ? "live" : "");
-      if (typeof v.picture === "string" && v.picture.indexOf("data:image/") === 0) {
+      var face = el("button", "card");
+      face.type = "button";
+      var picture = pictures[v.n];
+      if (typeof picture === "string" && picture.indexOf("data:image/") === 0) {
         var img = el("img", "pic");
-        img.src = v.picture;
+        img.src = picture;
         img.alt = "Version " + v.n;
-        card.appendChild(img);
+        face.appendChild(img);
       } else {
-        card.appendChild(el("div", "pic nopic", "No picture"));
+        face.appendChild(el("div", "pic nopic", "No picture"));
       }
       var body = el("div", "body");
       var top = el("div", "top");
       top.appendChild(el("span", "n", v.n ? "v" + v.n : ""));
       if (v.live) top.appendChild(el("span", "pill", "Live"));
-      top.appendChild(el("span", "when", day(v.savedAt)));
+      if (v.newest) top.appendChild(el("span", "here", "On your computer"));
+      if (!v.live && !v.newest) top.appendChild(el("span", "when", day(v.savedAt)));
       body.appendChild(top);
+      if (v.milestone) body.appendChild(el("p", "flag", "\u2691 " + v.milestone));
       body.appendChild(el("p", "summary", v.summary || ""));
-      card.title = v.summary || "";
-      card.appendChild(body);
+      face.appendChild(body);
+      face.title = "Open version " + v.n + " in Freckles";
+      face.addEventListener("click", function () { open(page && v.n ? linkFor(page + "?v=" + v.n + "&compare=1") : link); });
+      card.appendChild(face);
+      if (v.n) {
+        var acts = el("div", "acts");
+        if (v.n > 1 && page) {
+          var cmp = el("button", "", "Compare");
+          cmp.type = "button";
+          cmp.title = "See what changed from version " + (v.n - 1);
+          cmp.addEventListener("click", function () { open(linkFor(page + "?v=" + v.n + "&compare=1")); });
+          acts.appendChild(cmp);
+        }
+        if (!v.newest) {
+          var back = el("button", "", "Go back");
+          back.type = "button";
+          back.title = "Ask your agent to go back to version " + v.n;
+          back.addEventListener("click", function () { say("Go back to version " + v.n); });
+          acts.appendChild(back);
+        }
+        card.appendChild(acts);
+      }
       list.appendChild(card);
     });
     // Newest on the right, in view.
     list.scrollLeft = list.scrollWidth;
     reportSize();
   }
-
   function reportSize() {
     notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
   }
@@ -32986,7 +33040,7 @@ var TIMELINE_HTML = `<!doctype html>
 `;
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.2.6" : "dev";
+var VERSION = true ? "0.2.7" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -33106,7 +33160,7 @@ K3(
   server,
   "show_timeline",
   {
-    description: `Show the person the app's newest versions with their pictures, which one is live, and how the month's spending stands. Hosts that can draw it show a small timeline inside the chat with an "Open in Freckles" button; elsewhere it returns one status line and a link. Use it after a change the person can see, or when they ask to see their app ("show me").`,
+    description: `Show the person the app's newest versions with their pictures, which one is live, milestones, and how the month's spending stands. Hosts that can draw it show a small timeline inside the chat; elsewhere it returns a short table and a link. Use it after a change the person can see, or when they ask to see their app ("show me the timeline"). Show its result as it is, with nothing before or after unless something needs a decision.`,
     inputSchema: { app: appRef },
     annotations: { readOnlyHint: true },
     _meta: { ui: { resourceUri: TIMELINE_URI } }
@@ -33128,24 +33182,45 @@ K3(
       const status = parts.filter(Boolean).join(" \xB7 ");
       const page = newest ? await appPath(app) : void 0;
       const link = page ? await linkTo(`${page}?v=${newest.n}`) : void 0;
-      const versions = await Promise.all(
-        timeline.slice(0, 6).map(async (v2) => ({
-          n: v2.n,
-          summary: v2.summary,
-          savedAt: v2.savedAt,
-          live: isOnline(v2),
-          picture: v2.shot ? await thumbnail(v2.shot) ?? null : null
-        }))
-      );
+      const side = await readSide(app.id);
+      const pins = side?.pins ?? {};
+      const recent = timeline.slice(0, 6);
+      const versions = recent.map((v2, i) => ({
+        n: v2.n,
+        summary: v2.summary,
+        savedAt: v2.savedAt,
+        live: isOnline(v2),
+        newest: i === 0,
+        milestone: v2.n ? pins[v2.n] ?? null : null
+      }));
+      const pictures = {};
+      for (const v2 of recent) if (v2.n && v2.shot) {
+        const p2 = await thumbnail(v2.shot);
+        if (p2) pictures[v2.n] = p2;
+      }
+      const name = side?.cloud?.repo?.split("/").pop() ?? appName(app);
       return {
-        content: [{ type: "text", text: `${status}${linkLineFor(link, "The timeline")}` }],
-        structuredContent: { app: (await readSide(app.id))?.cloud?.repo?.split("/").pop() ?? appName(app), status, link: link ?? null, versions }
+        // The Freckles link signs the person in, so it's theirs alone; the published app is what can be shared.
+        content: [{ type: "text", text: timelineText(status, versions) + (app.published?.url ? `
+To share it, send: ${app.published.url}` : "") + linkLineFor(link, "The timeline") }],
+        structuredContent: { app: name, status, link: link ?? null, page: page ?? null, share: app.published?.url ?? null, versions },
+        _meta: { "freckles/pictures": pictures }
       };
     } catch (err) {
       return failure(err);
     }
   }
 );
+function timelineText(status, versions) {
+  if (!versions.length) return status;
+  const when = (iso) => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const where = (v2) => [v2.live && "Live", v2.newest && "On your computer"].filter(Boolean).join(", ");
+  const rows = versions.map((v2) => `| ${v2.n ?? ""} | ${where(v2)} | ${v2.milestone ? `\u2691 ${v2.milestone}` : ""} | ${v2.summary.replace(/\|/g, "/")} | ${when(v2.savedAt)} |`);
+  const [a, b] = [versions[1]?.n, versions[0]?.n];
+  const older = versions.at(-1)?.n;
+  const hint = a && b ? `Say "compare ${a} and ${b}"${older && older !== a ? ` or "go back to ${older}"` : ""}.` : "";
+  return [status, "", "| Version | Where | Milestone | What changed | Saved |", "|---|---|---|---|---|", ...rows, "", hint].join("\n").trimEnd();
+}
 async function monthLine() {
   const amount = (minor, currency) => `${{ EUR: "\u20AC", USD: "$", GBP: "\xA3" }[currency] ?? `${currency} `}${(minor / 100).toFixed(2).replace(/\.00$/, "")}`;
   try {

@@ -63,8 +63,9 @@ Never run `git commit`, `git push` or `git checkout` yourself for this app: `sav
 - Offer it at that natural pause, in one line: "Saved version 12. See it next to version 11?"
   Don't offer it for saves nobody can see, and never interrupt them with it while they're building.
 - After a change the person can see, or when they ask "show me", call `show_timeline`. Hosts that
-  can draw it show a small timeline with pictures inside the chat; the others get one status line
-  and the link.
+  can draw it show a small timeline with pictures inside the chat; the others get a short table and
+  the link. Show it as it is: no checking before it, no notes after it, unless something needs the
+  person to decide.
 
 ## Leaving is always possible
 
