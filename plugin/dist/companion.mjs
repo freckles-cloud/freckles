@@ -31119,7 +31119,7 @@ function limitStatus(limit, spentMinor2) {
 }
 
 // packages/shots/src/index.ts
-import { mkdir as mkdir3 } from "node:fs/promises";
+import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
 import { join as join4 } from "node:path";
 
 // packages/shots/src/serve.ts
@@ -31239,6 +31239,116 @@ async function waitFor(url2, timeoutMs, child) {
   throw new Error(`the app did not answer within ${Math.round(timeoutMs / 1e3)} seconds`);
 }
 
+// packages/shots/src/layout.ts
+var MIN_SIDE = 4;
+var MAX_PARTS = 120;
+var MAX_LABEL = 80;
+function cleanLabel(text) {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  return t.length > MAX_LABEL ? `${t.slice(0, MAX_LABEL - 1)}\u2026` : t;
+}
+function tidyLayout(raw) {
+  const { w: W, h: H2 } = raw.size;
+  const seen = /* @__PURE__ */ new Set();
+  const parts = [];
+  for (const p2 of raw.parts ?? []) {
+    const x = Math.max(0, Math.round(p2.box.x));
+    const y = Math.max(0, Math.round(p2.box.y));
+    const r2 = Math.min(W, Math.round(p2.box.x + p2.box.w));
+    const b = Math.min(H2, Math.round(p2.box.y + p2.box.h));
+    const box = { x, y, w: r2 - x, h: b - y };
+    if (box.w < MIN_SIDE || box.h < MIN_SIDE) continue;
+    const label = cleanLabel(p2.label);
+    if (!label && p2.kind !== "section") continue;
+    const key = `${p2.kind}|${label}|${box.x},${box.y},${box.w},${box.h}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push({ kind: p2.kind, label, box, path: p2.path, ...p2.within ? { within: cleanLabel(p2.within) } : {} });
+    if (parts.length >= MAX_PARTS) break;
+  }
+  return { page: { path: raw.page?.path ?? "/", title: cleanLabel(raw.page?.title) }, size: raw.size, parts };
+}
+function readLayoutInPage() {
+  const W = window.innerWidth;
+  const H2 = window.innerHeight;
+  const text = (s) => (s ?? "").replace(/\s+/g, " ").trim();
+  const nameOf = (el) => {
+    const aria = el.getAttribute("aria-label");
+    if (aria) return text(aria);
+    const by = el.getAttribute("aria-labelledby");
+    if (by) {
+      const t = by.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
+      if (text(t)) return text(t);
+    }
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+      const label = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : el.closest("label");
+      if (label && text(label.textContent)) return text(label.textContent);
+      if ("placeholder" in el && el.placeholder) return text(el.placeholder);
+      if (el instanceof HTMLInputElement && ["submit", "button"].includes(el.type)) return text(el.value);
+      return text(el.getAttribute("name"));
+    }
+    if (el instanceof HTMLImageElement) return text(el.alt);
+    return text(el.innerText ?? el.textContent);
+  };
+  const step = (el) => {
+    const tag = el.tagName.toLowerCase();
+    if (el.id && !/\d{3,}/.test(el.id)) return `${tag}#${el.id}`;
+    const cls = [...el.classList].find((c) => /^[a-zA-Z][\w-]{1,30}$/.test(c) && !/\d{3,}/.test(c));
+    return cls ? `${tag}.${cls}` : tag;
+  };
+  const pathOf = (el) => {
+    const steps = [];
+    let cur = el;
+    while (cur && cur !== document.body && steps.length < 3) {
+      steps.unshift(step(cur));
+      if (cur.id) break;
+      cur = cur.parentElement;
+    }
+    return steps.join(" > ");
+  };
+  const SECTIONS = "header, nav, main, section, footer, form, aside, [role=banner], [role=navigation], [role=main], [role=contentinfo], [role=region]";
+  const sectionName = (s) => {
+    const aria = s.getAttribute("aria-label");
+    if (aria) return text(aria);
+    const h2 = s.querySelector("h1, h2, h3");
+    if (h2 && text(h2.textContent)) return text(h2.textContent);
+    return "";
+  };
+  const withinOf = (el) => {
+    const s = el.parentElement?.closest(SECTIONS);
+    if (!s) return void 0;
+    return sectionName(s) || s.tagName.toLowerCase();
+  };
+  const visible = (el) => {
+    const r2 = el.getBoundingClientRect();
+    if (r2.width < 1 || r2.height < 1) return void 0;
+    if (r2.bottom <= 0 || r2.right <= 0 || r2.top >= H2 || r2.left >= W) return void 0;
+    const st = getComputedStyle(el);
+    if (st.visibility === "hidden" || st.display === "none" || Number(st.opacity) === 0) return void 0;
+    return r2;
+  };
+  const parts = [];
+  const add2 = (kind, el, label) => {
+    const r2 = visible(el);
+    if (!r2) return;
+    parts.push({ kind, label, box: { x: r2.left, y: r2.top, w: r2.width, h: r2.height }, path: pathOf(el), within: withinOf(el) });
+  };
+  document.querySelectorAll(SECTIONS).forEach((el) => add2("section", el, sectionName(el)));
+  document.querySelectorAll("h1, h2, h3").forEach((el) => add2("heading", el, nameOf(el)));
+  document.querySelectorAll("button, [role=button], input[type=submit], input[type=button]").forEach((el) => add2("button", el, nameOf(el)));
+  document.querySelectorAll("a[href]").forEach((el) => {
+    if (el.closest("button, [role=button]") || el.querySelector("button")) return;
+    const name = nameOf(el);
+    if (name) add2("link", el, name);
+  });
+  document.querySelectorAll("input:not([type=hidden]):not([type=submit]):not([type=button]), textarea, select").forEach((el) => add2("input", el, nameOf(el)));
+  document.querySelectorAll("img[alt]").forEach((el) => {
+    const name = nameOf(el);
+    if (name) add2("image", el, name);
+  });
+  return { page: { path: location.pathname + location.search, title: document.title }, size: { w: W, h: H2 }, parts };
+}
+
 // packages/shots/src/compare.ts
 var import_pngjs = __toESM(require_png(), 1);
 
@@ -31338,6 +31448,7 @@ async function capture(app, versionId) {
     await page.waitForLoadState("networkidle", { timeout: 5e3 }).catch(() => {
     });
     await page.screenshot({ path: file3 });
+    await keepLayout(app, versionId, page, join4(dir, `${versionId}.layout.json`));
     return { path: file3 };
   } catch (err) {
     return { skipped: `Could not photograph the app: ${err.message}` };
@@ -31346,6 +31457,23 @@ async function capture(app, versionId) {
     });
     await running.stop().catch(() => {
     });
+  }
+}
+async function keepLayout(app, versionId, page, file3) {
+  try {
+    const raw = await Promise.race([
+      page.evaluate(readLayoutInPage),
+      new Promise((_2, no) => setTimeout(() => no(new Error("layout took too long")), 5e3))
+    ]);
+    await writeFile3(file3, `${JSON.stringify(tidyLayout(raw))}
+`);
+    if (await readSide(app.id)) {
+      await updateSide(app.id, (side) => ({
+        ...side,
+        versions: { ...side.versions, [versionId]: { ...side.versions[versionId], layout: file3 } }
+      }));
+    }
+  } catch {
   }
 }
 
@@ -31792,7 +31920,7 @@ function readableSize(bytes) {
 
 // packages/publish/src/azure-read.ts
 import { exec as exec3 } from "node:child_process";
-import { readFile as readFile4 } from "node:fs/promises";
+import { readFile as readFile5 } from "node:fs/promises";
 import { join as join8 } from "node:path";
 import { promisify as promisify4 } from "node:util";
 var run4 = promisify4(exec3);
@@ -31916,7 +32044,7 @@ async function namesInRepo(path2) {
   for (const file3 of files) {
     let text;
     try {
-      text = await readFile4(join8(path2, file3), "utf8");
+      text = await readFile5(join8(path2, file3), "utf8");
     } catch {
       continue;
     }
@@ -31973,9 +32101,9 @@ var PLACES = {
   westus2: "In the United States",
   centralus: "In the United States"
 };
-function whereIs(location) {
-  if (!location) return "";
-  return PLACES[location.toLowerCase().replace(/\s+/g, "")] ?? `In Azure's ${location} region`;
+function whereIs(location2) {
+  if (!location2) return "";
+  return PLACES[location2.toLowerCase().replace(/\s+/g, "")] ?? `In Azure's ${location2} region`;
 }
 var spendCache;
 async function readSpend(subscription) {
@@ -32269,13 +32397,13 @@ Words: say version (by its number: "version 12"; the short id is only for callin
 // packages/mcp/src/leave.ts
 import { execFile as execFile6 } from "node:child_process";
 import { existsSync as existsSync2 } from "node:fs";
-import { cp, mkdir as mkdir8, mkdtemp as mkdtemp2, rm as rm6, writeFile as writeFile4 } from "node:fs/promises";
+import { cp, mkdir as mkdir8, mkdtemp as mkdtemp2, rm as rm6, writeFile as writeFile5 } from "node:fs/promises";
 import { homedir as homedir3, tmpdir as tmpdir2 } from "node:os";
 import { join as join10 } from "node:path";
 import { promisify as promisify8 } from "node:util";
 
 // packages/mcp/src/cloud.ts
-import { chmod, mkdir as mkdir7, mkdtemp, readFile as readFile5, rm as rm5, writeFile as writeFile3 } from "node:fs/promises";
+import { chmod, mkdir as mkdir7, mkdtemp, readFile as readFile6, rm as rm5, writeFile as writeFile4 } from "node:fs/promises";
 import { homedir as homedir2 } from "node:os";
 import { basename as basename2, dirname, join as join9 } from "node:path";
 import { execFile as execFile5 } from "node:child_process";
@@ -32294,7 +32422,7 @@ var NotConnected = class extends Error {
 async function readConfig() {
   const url2 = process.env.FRECKLES_URL;
   try {
-    const c = JSON.parse(await readFile5(CONFIG, "utf8"));
+    const c = JSON.parse(await readFile6(CONFIG, "utf8"));
     return url2 && url2 !== c.url ? { url: url2 } : c;
   } catch {
     return { url: url2 ?? DEFAULT_URL };
@@ -32302,7 +32430,7 @@ async function readConfig() {
 }
 async function writeConfig(c) {
   await mkdir7(dirname(CONFIG), { recursive: true, mode: 448 });
-  await writeFile3(CONFIG, JSON.stringify(c, null, 2), { mode: 384 });
+  await writeFile4(CONFIG, JSON.stringify(c, null, 2), { mode: 384 });
   await chmod(CONFIG, 384);
 }
 async function api(c, method, path2, body) {
@@ -32366,17 +32494,17 @@ async function connect(waitSeconds = 90) {
 async function queue(q) {
   const list3 = await readQueue();
   if (!list3.some((x) => x.path === q.path)) list3.push(q);
-  await writeFile3(QUEUE, JSON.stringify(list3));
+  await writeFile4(QUEUE, JSON.stringify(list3));
 }
 async function readQueue() {
   try {
-    return JSON.parse(await readFile5(QUEUE, "utf8"));
+    return JSON.parse(await readFile6(QUEUE, "utf8"));
   } catch {
     return [];
   }
 }
 async function forget(path2) {
-  await writeFile3(QUEUE, JSON.stringify((await readQueue()).filter((q) => q.path !== path2)));
+  await writeFile4(QUEUE, JSON.stringify((await readQueue()).filter((q) => q.path !== path2)));
 }
 async function ensureRegistered(c, app) {
   const side = await readSide(app.id);
@@ -32426,7 +32554,7 @@ async function sendVersion(c, app, appId, v2, n) {
   let picture;
   if (v2.shot) {
     try {
-      picture = (await readFile5(v2.shot)).toString("base64");
+      picture = (await readFile6(v2.shot)).toString("base64");
     } catch {
     }
   }
@@ -32553,7 +32681,7 @@ var frecklesHosting = {
         err.agent = "Publishing an app with a server on Freckles Hosting needs a Dockerfile at the root of the published folder. Add one that installs dependencies, builds, and starts the app listening on the port in $PORT (default 8080). Save it as a version, then publish again.";
         throw err;
       }
-      if (kind === "static") await writeFile3(join9(dir, "Dockerfile"), STATIC_DOCKERFILE);
+      if (kind === "static") await writeFile4(join9(dir, "Dockerfile"), STATIC_DOCKERFILE);
       const mac = process.platform === "darwin" ? ["--no-xattrs", "--no-mac-metadata"] : [];
       const { stdout } = await promisify7(execFile5)("tar", [...mac, "-czf", "-", "-C", dir, "."], {
         encoding: "buffer",
@@ -32645,6 +32773,14 @@ function describeEvents(events) {
   Its page in Freckles, to offer the person (signs them in, works once for five minutes): ${e.link}` : ""}`
   ).join("\n");
 }
+async function setPaused(app, paused) {
+  const c = await readConfig();
+  if (!c.token) throw new Error("This computer isn't connected to Freckles online yet: call connect_freckles first.");
+  const appId = (await readSide(app.id))?.cloud?.appId;
+  if (!appId) throw new Error("This app isn't in Freckles online yet, so it isn't hosted there and costs nothing to pause.");
+  const r2 = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/${paused ? "pause" : "wake"}`);
+  return paused ? `${r2.name} is paused: it isn't costing anything for running, and nothing is lost. Visitors can't use it until it's woken. Wake it (wake_app) before testing it, and only when the person agrees.` : `${r2.name} is awake again, exactly as it was left${r2.url ? `, at ${r2.url}` : ""}. The first visit may take a few seconds while it starts.`;
+}
 
 // packages/mcp/src/leave.ts
 var run7 = promisify8(execFile6);
@@ -32718,7 +32854,7 @@ async function leaveKit(app, into = join10(homedir3(), "Downloads")) {
       await holdBackRisky(join10(dir, "code"));
     }
     for (const v2 of versions) if (v2.shot && existsSync2(v2.shot)) await cp(v2.shot, join10(dir, "pictures", `${v2.shortId}.png`)).catch(() => void 0);
-    await writeFile4(
+    await writeFile5(
       join10(dir, "versions.md"),
       `# Versions of ${appName(app)}
 
@@ -32728,8 +32864,8 @@ ${versions.map((v2) => `- **${v2.savedAt.slice(0, 16).replace("T", " ")}** \xB7 
     );
     await mkdir8(join10(dir, "infra"));
     const own = join10(dir, "code", "Dockerfile");
-    await writeFile4(join10(dir, "infra", "Dockerfile"), existsSync2(own) ? await (await import("node:fs/promises")).readFile(own, "utf8") : STATIC_DOCKERFILE2);
-    await writeFile4(join10(dir, "README.md"), readme(app, versions, app.published?.url));
+    await writeFile5(join10(dir, "infra", "Dockerfile"), existsSync2(own) ? await (await import("node:fs/promises")).readFile(own, "utf8") : STATIC_DOCKERFILE2);
+    await writeFile5(join10(dir, "README.md"), readme(app, versions, app.published?.url));
     await mkdir8(into, { recursive: true });
     const zip = join10(into, `${safe}-leave-kit-${stamp}.zip`);
     await rm6(zip, { force: true });
@@ -33040,7 +33176,7 @@ var TIMELINE_HTML = `<!doctype html>
 `;
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.2.7" : "dev";
+var VERSION = true ? "0.2.8" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -33303,6 +33439,47 @@ tool(
     const restored = await goBack(app, version2);
     return `Went back: a new version now matches the one you chose. Nothing was deleted, and every version in between is still there.
 ${versionDetail(restored)}`;
+  }
+);
+var FILES_LIMIT = 6e4;
+var cap = (text) => text.length > FILES_LIMIT ? `${text.slice(0, FILES_LIMIT)}
+
+[Cut short at ${FILES_LIMIT} characters. Ask for one file with path to see all of it.]` : text;
+tool(
+  "version_files",
+  "Read an earlier version without changing anything: what that version changed (each file, with the lines added and removed), or, with path, one file exactly as it was in that version (a folder lists its files). Use it when the person asks to bring back one part of an old version, like a button or a section: read how it was made, then add just that part to the app as it is now and save a version.",
+  {
+    app: appRef,
+    version: external_exports.string().describe("The short id of the version, from list_versions or from the person's request."),
+    path: external_exports.string().optional().describe('A file or folder in the app, relative to its folder, e.g. "index.html" or "src/components".')
+  },
+  async ({ app: ref, version: version2, path: path2 }) => {
+    const app = await resolveApp(ref);
+    const v2 = await getVersion(app, version2);
+    if (!v2) throw new Error(`there's no version ${version2} in this app`);
+    const head = `Version ${v2.n ?? ""} (${v2.shortId}): ${v2.summary}`.replace("Version  ", "Version ");
+    if (path2) {
+      const clean = path2.replace(/^\.?\/+/, "").replace(/\/+$/, "").replace(/^\.$/, "");
+      if (clean.split("/").includes("..")) throw new Error("that path is outside the app");
+      const kind = await git(app.path, "cat-file", "-t", `${v2.id}:${clean}`).catch(() => "");
+      if (kind === "tree" || clean === "") {
+        const files = await git(app.path, "ls-tree", "-r", "--name-only", v2.id, "--", clean || ".");
+        return `${head}
+Files in ${clean || "the app"} at that version:
+${files || "(none)"}`;
+      }
+      if (kind !== "blob") throw new Error(`${clean} wasn't in the app at version ${v2.shortId}`);
+      return cap(`${head}
+${clean} as it was in that version:
+
+${await git(app.path, "show", `${v2.id}:${clean}`)}`);
+    }
+    const parent = await git(app.path, "rev-parse", "--verify", "--quiet", `${v2.id}^`).catch(() => "");
+    const changes = parent ? await git(app.path, "diff", "--stat", "--patch", "--no-color", parent, v2.id) : await git(app.path, "show", "--stat", "--patch", "--no-color", "--format=", v2.id);
+    return cap(`${head}
+What this version changed${parent ? "" : " (it's the first version, so everything is new)"}:
+
+${changes || "(nothing)"}`);
   }
 );
 tool(
@@ -33568,6 +33745,18 @@ tool(
     const appId = ref ? (await readSide((await resolveApp(ref)).id))?.cloud?.appId : void 0;
     return describeEvents(await whatsNew(appId));
   }
+);
+tool(
+  "pause_app",
+  "Pause an app Freckles hosts online, so it stops costing anything for running. Nothing is lost: its link, versions, settings and stored information stay exactly as they are, and visitors see it's paused until it's woken. Only when the person asks.",
+  { app: appRef },
+  async ({ app: ref }) => setPaused(await changeableApp(ref, "pause_app"), true)
+);
+tool(
+  "wake_app",
+  "Wake an app the person paused, so it runs again exactly as it was left. Do it when they ask, or before testing or publishing a paused app, after telling them it will start costing again.",
+  { app: appRef },
+  async ({ app: ref }) => setPaused(await changeableApp(ref, "wake_app"), false)
 );
 async function findIdea(app, name) {
   const wanted = name.trim().toLowerCase();
