@@ -1,6 +1,6 @@
 {
   "name": "freckles-companion",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Every step your agent finishes becomes a version with a picture of your app, kept and published by Freckles.",
   "type": "module",
   "bin": {

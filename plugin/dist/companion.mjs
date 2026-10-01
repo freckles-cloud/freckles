@@ -32781,6 +32781,43 @@ async function setPaused(app, paused) {
   const r2 = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/${paused ? "pause" : "wake"}`);
   return paused ? `${r2.name} is paused: it isn't costing anything for running, and nothing is lost. Visitors can't use it until it's woken. Wake it (wake_app) before testing it, and only when the person agrees.` : `${r2.name} is awake again, exactly as it was left${r2.url ? `, at ${r2.url}` : ""}. The first visit may take a few seconds while it starts.`;
 }
+var SYMBOLS = { EUR: "\u20AC", USD: "$", GBP: "\xA3" };
+var moneyOf = (minor, c) => `${SYMBOLS[c] ?? `${c} `}${(minor / 100).toFixed(2)}`;
+var listOf = (xs) => xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+async function whatsRunning() {
+  const c = await readConfig();
+  if (!c.token) throw new NotConnected();
+  const r2 = await api(c, "GET", "/api/v1/running");
+  const lines = [];
+  lines.push(r2.online.length ? `Online: ${r2.online.length} ${r2.online.length === 1 ? "app" : "apps"} (${listOf(r2.online)}), running on ${r2.parts} ${r2.parts === 1 ? "part" : "parts"}.` : "Nothing is online right now.");
+  if (r2.paused.length) lines.push(`Paused, costing nothing for running: ${listOf(r2.paused)}.`);
+  if (r2.elsewhere.length) lines.push(`Shown but living in the person's own place: ${listOf(r2.elsewhere)}.`);
+  const s = r2.spending;
+  const spent = s.known ? `${moneyOf(s.spentMinor, s.currency)} spent this month on Freckles` : "This month's spending isn't known yet";
+  lines.push(s.limit ? `${spent}, of a ${moneyOf(s.limit.amountMinor, s.limit.currency)} monthly limit.` : `${spent}. No monthly limit is set.`);
+  if (r2.top) lines.push(`Worth suggesting: ${r2.top.title}. ${r2.top.detail}`);
+  return lines.join("\n") + await linkLine("/cloud", "Everything that's running");
+}
+async function pauseUnused(days, confirm) {
+  const c = await readConfig();
+  if (!c.token) throw new NotConnected();
+  if (!confirm) {
+    const r3 = await api(c, "GET", `/api/v1/unused?days=${days}`);
+    if (!r3.apps.length) return `No app Freckles hosts has gone ${days} days without a new version, so there's nothing to pause.`;
+    return [
+      `These ${r3.apps.length === 1 ? "app has" : `${r3.apps.length} apps have`} had no new version in ${days} days and could be paused:`,
+      ...r3.apps.map((a) => `- ${a.name} (last changed ${a.lastChange.slice(0, 10)})`),
+      "Visits aren't counted, so ask the person whether anyone still uses them. Pausing stops them costing anything for running; nothing is lost and each can be woken any time.",
+      "For the agent: nothing was paused. Call pause_unused again with confirm: true only after the person agrees."
+    ].join("\n");
+  }
+  const r2 = await api(c, "POST", "/api/v1/unused", { days, confirm: true });
+  if (!r2.paused.length && !r2.refused.length) return `No app Freckles hosts has gone ${days} days without a new version, so nothing was paused.`;
+  return [
+    r2.paused.length ? `Paused ${listOf(r2.paused)}: ${r2.paused.length === 1 ? "it isn't" : "they aren't"} costing anything for running, and nothing is lost. Wake any of them with wake_app when the person asks.` : "",
+    r2.refused.length ? `Not paused: ${r2.refused.join("; ")}` : ""
+  ].filter(Boolean).join("\n");
+}
 
 // packages/mcp/src/leave.ts
 var run7 = promisify8(execFile6);
@@ -33176,7 +33213,7 @@ var TIMELINE_HTML = `<!doctype html>
 `;
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.2.8" : "dev";
+var VERSION = true ? "0.2.9" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -33765,4 +33802,19 @@ async function findIdea(app, name) {
   if (!found) throw new Error(`no idea called "${name}"`);
   return found;
 }
+tool(
+  "whats_running",
+  "A plain summary of everything the person has running across all their apps: which are online, which are paused, how many parts they run on, this month's spending against the limit, and the one suggestion most worth making. Use when they ask what's running, what they're paying for, or how things stand overall.",
+  {},
+  async () => whatsRunning()
+);
+tool(
+  "pause_unused",
+  "Find the apps Freckles hosts that have had no new version in a number of days, and pause them so they stop costing anything for running. Nothing is lost; each can be woken later. Without confirm it only lists them: show the person the list and ask, then call again with confirm: true. Never includes protected apps or apps in the person's own place.",
+  {
+    days: external_exports.number().int().min(1).max(365).optional().describe("How many days without a new version counts as unused. Defaults to 30."),
+    confirm: external_exports.boolean().optional().describe("True only after the person agreed to pause the apps listed.")
+  },
+  async ({ days, confirm }) => pauseUnused(days ?? 30, confirm === true)
+);
 await server.connect(new StdioServerTransport());
