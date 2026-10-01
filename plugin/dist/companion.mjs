@@ -23735,7 +23735,9 @@ async function listVersions(app, options = {}) {
   const out = await git(app.path, "log", `--max-count=${limit}`, `--format=${FORMAT}`, branch);
   const live = await git(app.path, "rev-parse", app.liveBranch);
   const records = out.split(RECORD).map((record2) => record2.replace(/^\n/, "")).filter((record2) => record2.trim() !== "");
-  return Promise.all(records.map((record2) => toVersion(app, record2, live)));
+  const total = Number(await git(app.path, "rev-list", "--count", branch).catch(() => "0"));
+  const versions = await Promise.all(records.map((record2) => toVersion(app, record2, live)));
+  return versions.map((v, i) => total ? { ...v, n: total - i } : v);
 }
 async function getVersion(app, id) {
   let record2;
@@ -23745,7 +23747,9 @@ async function getVersion(app, id) {
     return void 0;
   }
   const live = await git(app.path, "rev-parse", app.liveBranch);
-  return toVersion(app, record2.replace(RECORD, ""), live);
+  const v = await toVersion(app, record2.replace(RECORD, ""), live);
+  const n = Number(await git(app.path, "rev-list", "--count", v.id).catch(() => "0"));
+  return n ? { ...v, n } : v;
 }
 async function goBack(app, versionId) {
   const target = await getVersion(app, versionId);
@@ -24924,7 +24928,7 @@ function appLine(app) {
 }
 function previewLine(app) {
   const preview = app.preview;
-  if (!preview) return "no preview set up \u2014 versions will save without a picture";
+  if (!preview) return "pictures not set up yet \u2014 versions will save without a picture (call set_preview)";
   if (preview.kind === "static") {
     const dir = preview.dir?.replace(/^\.\/?/, "").replace(/\/$/, "");
     return `photographed by serving ${dir || "its own folder"}`;
@@ -24936,7 +24940,7 @@ function versionLine(v) {
   const live = v.isLive ? " \xB7 LIVE" : "";
   const picture = v.shot ? " \xB7 has a picture" : v.shotSkipped ? " \xB7 no picture" : "";
   const words = v.inPlainLanguage ? "" : " \xB7 not yet in plain language";
-  return `${day}  ${v.shortId}${live}  ${v.summary}${picture}${words}`;
+  return `${day}  ${v.shortId}${v.n ? ` (version ${v.n})` : ""}${live}  ${v.summary}${picture}${words}`;
 }
 function versionDetail(v) {
   const lines = [
@@ -24972,13 +24976,15 @@ After every finished step: call save_version with a one-line summary of what the
 
 Publishing: when the person asks to put the app online or share it, call publish straight away and give them the link. Publish only with publish, never with other hosting tools or CLIs. Anything the app needs from the cloud comes from Freckles too. Before proposing anything that costs money, call spending and tell them where their month stands. After publishing, call whats_new.
 
+What the person did on the Freckles page (a spending limit, a request they sent you) arrives through whats_new. Take it into account and mention it briefly when it matters ("I see you set a \u20AC10 limit, so\u2026"). After doing a request they sent from Freckles, tell them it's done.
+
 Links into Freckles: after a save that changes something the person can see, after publishing, or when something breaks, tools return a link to that exact page (it signs them in once, for five minutes). Offer it at that natural pause, in one line, like "Saved version 12. See it next to version 11?" Never interrupt them with it while they're building.
 
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
 
 Tool results come in two parts: a sentence for the person, and detail "for the agent". Tell the person the sentence; use the detail to fix things, never show them raw logs unless they ask. A protected app must not be changed through Freckles or around it.
 
-Words: say version, go back, try an idea, keep the idea, publish. Don't say commit, branch, merge, push or deploy to the person.`;
+Words: say version (by its number: "version 12"; the short id is only for calling tools), picture, go back, try an idea, keep the idea, publish. Don't say commit, branch, merge, push or deploy to the person.`;
 
 // packages/mcp/src/leave.ts
 import { execFile as execFile6 } from "node:child_process";
@@ -25170,6 +25176,24 @@ async function linkLine(path2, what) {
   return url ? `
 ${what} in Freckles: ${url}
 For the agent: ${OFFER} The link signs them in and works once, for five minutes; call whats_new or save again for a fresh one.` : "";
+}
+async function nameMilestone(app, n, name) {
+  const clean = name.replace(/\s+/g, " ").trim().slice(0, 40);
+  await updateSide(app.id, (s) => {
+    const pins = { ...s.pins ?? {} };
+    if (clean) pins[n] = clean;
+    else delete pins[n];
+    return { ...s, pins };
+  });
+  const c = await readConfig();
+  const appId = (await readSide(app.id))?.cloud?.appId;
+  if (!c.token || !appId) return "on this computer";
+  try {
+    await api(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/pins`, { version: n, name: clean });
+    return "on this computer and in Freckles online";
+  } catch (err) {
+    return `on this computer (Freckles online couldn't be told: ${forAgent(err)})`;
+  }
 }
 async function appPath(app) {
   const id = (await readSide(app.id))?.cloud?.appId;
@@ -25492,7 +25516,8 @@ var ownAzure = {
 };
 
 // packages/mcp/src/index.ts
-var server = new McpServer({ name: "freckles", version: "0.2.2" }, { instructions: INSTRUCTIONS });
+var VERSION = true ? "0.2.5" : "dev";
+var server = new McpServer({ name: "freckles", version: VERSION }, { instructions: INSTRUCTIONS });
 var provider = new ThisComputer(process.env.CFP_ORIGIN ?? "http://localhost:4300");
 var appRef = external_exports.string().describe("The app: either the path to its folder, or the short id shown by list_apps.");
 async function resolveApp(ref) {
@@ -25616,6 +25641,20 @@ ${online}`;
   }
 );
 tool(
+  "name_milestone",
+  'Flag a version on the timeline with a short name the person will navigate by, like "Launched to the clinic" or "First paying customer". Use it when they reach something worth remembering, or when they ask. An empty name removes the flag.',
+  {
+    app: appRef,
+    version: external_exports.number().int().positive().describe("The version's number, as the person sees it: 12 for version 12 (see list_versions)."),
+    name: external_exports.string().max(40).describe('A few words, e.g. "Launched to the clinic". Empty to remove the flag.')
+  },
+  async ({ app: ref, version: version2, name }) => {
+    const app = await changeableApp(ref, "name_milestone");
+    const where = await nameMilestone(app, version2, name);
+    return name.trim() ? `Version ${version2} is flagged "${name.trim()}" on the timeline, ${where}.` : `The flag on version ${version2} is gone, ${where}.`;
+  }
+);
+tool(
   "describe_version",
   `Give an already-saved version a summary the user can read. Use this for apps taken over from a folder that was kept by a developer, where the timeline is full of notes like "feat: refactor hero grid" that mean nothing to them. Read what the version actually changed, then write one line about what the app does differently, from the user's point of view. The original note is never altered \u2014 this only changes what the user is shown.`,
   {
@@ -25641,13 +25680,13 @@ tool(
   async ({ app: ref, version: version2 }) => {
     const app = await changeableApp(ref, "go_back");
     const restored = await goBack(app, version2);
-    return `Done \u2014 the app is back to how it was. Nothing was deleted.
+    return `Went back: a new version now matches the one you chose. Nothing was deleted, and every version in between is still there.
 ${versionDetail(restored)}`;
   }
 );
 tool(
   "try_idea",
-  "Start a safe copy of the app to try something on, leaving the live app exactly as it is. Every version saved from now on belongs to this idea until it is kept or dropped.",
+  "Try an idea: a parallel track to try something on, leaving the app exactly as it is. Every version saved from now on belongs to this idea until it is kept or dropped.",
   {
     app: appRef,
     name: external_exports.string().describe('What the user is trying, e.g. "dark mode".')
@@ -25663,7 +25702,7 @@ tool("list_ideas", "The ideas currently being tried on this app.", { app: appRef
 });
 tool(
   "keep_idea",
-  "Fold an idea into the live app. If the idea and the live app changed the same things, this stops and tells you which \u2014 resolve them, save a version, and call this again. Explain any clash to the user in plain language; never show them the file list raw.",
+  "Keep an idea: it joins the app as a new version. If the idea and the live app changed the same things, this stops and tells you which \u2014 resolve them, save a version, and call this again. Explain any clash to the user in plain language; never show them the file list raw.",
   { app: appRef, name: external_exports.string().describe("The idea's name, from list_ideas.") },
   async ({ app: ref, name }) => {
     const app = await changeableApp(ref, "keep_idea");

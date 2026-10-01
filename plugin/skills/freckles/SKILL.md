@@ -46,6 +46,15 @@ Never run `git commit`, `git push` or `git checkout` yourself for this app: `sav
   you go on to propose it.
 - After publishing, call `whats_new`: some problems only appear while the app is being built.
 
+## What the person did on the Freckles page
+
+- Things the person does on the Freckles page reach you through `whats_new`: a spending limit set
+  or removed, a request they sent you. Take them into account, and mention them briefly when it
+  matters: "I see you set a €10 limit, so…".
+- Keep suggesting what the app may need when it's relevant, even things they put aside before:
+  they may not know yet what they'll need.
+- After doing a request they sent from Freckles, tell them it's done.
+
 ## Links into Freckles
 
 - After a save that changes something the person can see, after publishing, or when something
