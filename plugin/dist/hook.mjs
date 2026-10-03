@@ -69,8 +69,8 @@ var FORMAT = ["%H", "%s", "%b", "%aI", "%an"].join(FIELD) + RECORD;
 
 // packages/mcp/src/cloud.ts
 import { chmod, mkdir as mkdir2, mkdtemp, readFile as readFile2, rm, writeFile as writeFile2 } from "node:fs/promises";
-import { homedir as homedir2, hostname } from "node:os";
-import { basename, dirname, join as join2 } from "node:path";
+import { homedir as homedir3, hostname } from "node:os";
+import { basename, dirname, join as join3 } from "node:path";
 
 // packages/publish/src/this-computer.ts
 import { exec as exec2, execFile as execFile3 } from "node:child_process";
@@ -179,11 +179,23 @@ import { execFile as execFile4 } from "node:child_process";
 import { promisify as promisify6 } from "node:util";
 var run6 = promisify6(execFile4);
 
-// packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.3.0" : "dev";
+// packages/mcp/src/menu-dot.ts
+import { execFile as execFile5 } from "node:child_process";
+import { homedir as homedir2 } from "node:os";
+import { join as join2 } from "node:path";
+import { promisify as promisify7 } from "node:util";
+var run7 = promisify7(execFile5);
 var HOME = process.env.CFP_HOME ?? join2(homedir2(), ".cloud-for-personal");
-var CONFIG = join2(HOME, "secrets", "companion.json");
-var QUEUE = join2(HOME, "companion-queue.json");
+var OFFERED = join2(HOME, "menu-dot-offered");
+var MAC_APP = join2(homedir2(), "Applications", "Freckles Menu.app");
+var MAC_AGENT = join2(homedir2(), "Library", "LaunchAgents", "com.frecklescloud.menu.plist");
+var WIN_STARTUP = join2(process.env.APPDATA ?? "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Freckles Menu.lnk");
+
+// packages/mcp/src/cloud.ts
+var COMPANION_VERSION = true ? "0.3.1" : "dev";
+var HOME2 = process.env.CFP_HOME ?? join3(homedir3(), ".cloud-for-personal");
+var CONFIG = join3(HOME2, "secrets", "companion.json");
+var QUEUE = join3(HOME2, "companion-queue.json");
 var DEFAULT_URL = "https://app.frecklescloud.com";
 var NotConnected = class extends Error {
   constructor() {

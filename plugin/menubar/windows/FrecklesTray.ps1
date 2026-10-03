@@ -141,6 +141,10 @@ if ($Check) {
 
 # ─── The notification-area icon ───────────────────────────────
 
+# Only one dot at a time: opening it again (from the Start menu, say) does nothing if it is already there.
+$script:single = New-Object System.Threading.Mutex($false, "Local\FrecklesMenu")
+if (-not $script:single.WaitOne(0)) { return }
+
 $ni = New-Object System.Windows.Forms.NotifyIcon
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $ni.ContextMenuStrip = $menu

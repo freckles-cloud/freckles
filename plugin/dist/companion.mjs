@@ -32494,25 +32494,128 @@ Tool results come in two parts: a sentence for the person, and detail "for the a
 Words: say version (by its number: "version 12"; the short id is only for calling tools), picture, go back, try an idea, keep the idea, publish. Don't say commit, branch, merge, push or deploy to the person.`;
 
 // packages/mcp/src/leave.ts
-import { execFile as execFile6 } from "node:child_process";
-import { existsSync as existsSync2 } from "node:fs";
-import { cp, mkdir as mkdir8, mkdtemp as mkdtemp2, rm as rm7, writeFile as writeFile6 } from "node:fs/promises";
-import { homedir as homedir4, tmpdir as tmpdir2 } from "node:os";
-import { join as join11 } from "node:path";
-import { promisify as promisify8 } from "node:util";
+import { execFile as execFile7 } from "node:child_process";
+import { existsSync as existsSync3 } from "node:fs";
+import { cp, mkdir as mkdir9, mkdtemp as mkdtemp2, rm as rm8, writeFile as writeFile7 } from "node:fs/promises";
+import { homedir as homedir5, tmpdir as tmpdir2 } from "node:os";
+import { join as join12 } from "node:path";
+import { promisify as promisify9 } from "node:util";
 
 // packages/mcp/src/cloud.ts
-import { chmod, mkdir as mkdir7, mkdtemp, readFile as readFile7, rm as rm6, writeFile as writeFile5 } from "node:fs/promises";
-import { homedir as homedir3, hostname as hostname2 } from "node:os";
-import { basename as basename3, dirname as dirname2, join as join10 } from "node:path";
+import { chmod as chmod2, mkdir as mkdir8, mkdtemp, readFile as readFile8, rm as rm7, writeFile as writeFile6 } from "node:fs/promises";
+import { homedir as homedir4, hostname as hostname2 } from "node:os";
+import { basename as basename3, dirname as dirname2, join as join11 } from "node:path";
+import { execFile as execFile6 } from "node:child_process";
+import { existsSync as existsSync2 } from "node:fs";
+import { tmpdir } from "node:os";
+import { promisify as promisify8 } from "node:util";
+
+// packages/mcp/src/menu-dot.ts
 import { execFile as execFile5 } from "node:child_process";
 import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmod, mkdir as mkdir7, rm as rm6, writeFile as writeFile5 } from "node:fs/promises";
+import { homedir as homedir3 } from "node:os";
+import { join as join10 } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify as promisify7 } from "node:util";
-var COMPANION_VERSION = true ? "0.3.0" : "dev";
+var run7 = promisify7(execFile5);
 var HOME = process.env.CFP_HOME ?? join10(homedir3(), ".cloud-for-personal");
-var CONFIG = join10(HOME, "secrets", "companion.json");
-var QUEUE = join10(HOME, "companion-queue.json");
+var OFFERED = join10(HOME, "menu-dot-offered");
+function filesDir(kind) {
+  const probe = kind === "windows" ? "Install-FrecklesTray.ps1" : "Freckles Menu.app";
+  for (const rel of [`../menubar/${kind}/`, `../../../menubar/${kind}/`, ...kind === "mac" ? ["../../../menubar/build/"] : []]) {
+    const dir = fileURLToPath(new URL(rel, import.meta.url));
+    if (existsSync(join10(dir, probe))) return dir;
+  }
+  return void 0;
+}
+var MAC_APP = join10(homedir3(), "Applications", "Freckles Menu.app");
+var MAC_AGENT = join10(homedir3(), "Library", "LaunchAgents", "com.frecklescloud.menu.plist");
+var WIN_STARTUP = join10(process.env.APPDATA ?? "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Freckles Menu.lnk");
+function installed() {
+  if (process.platform === "darwin") return existsSync(MAC_APP);
+  if (process.platform === "win32") return existsSync(WIN_STARTUP);
+  return false;
+}
+async function offerLine() {
+  if (process.platform !== "darwin" && process.platform !== "win32" || installed() || existsSync(OFFERED)) return "";
+  await mkdir7(HOME, { recursive: true });
+  await writeFile5(OFFERED, (/* @__PURE__ */ new Date()).toISOString());
+  const where = process.platform === "darwin" ? "in the menu bar at the top of the screen" : "next to the clock";
+  return `
+For the agent: once, in one plain sentence, offer the person a small status dot ${where}: green when their online apps are answering, amber when one needs a look, red when one isn't. If they say yes, call install_menu_dot. Don't offer it again if they decline.`;
+}
+async function installMac() {
+  const from = filesDir("mac");
+  if (!from) throw new Error("The dot isn't in this copy of Freckles. Update the Freckles plugin, then try again.");
+  await run7("pkill", ["-x", "FrecklesMenu"]).catch(() => void 0);
+  await mkdir7(join10(homedir3(), "Applications"), { recursive: true });
+  await rm6(MAC_APP, { recursive: true, force: true });
+  await run7("cp", ["-R", join10(from, "Freckles Menu.app"), MAC_APP]);
+  await chmod(join10(MAC_APP, "Contents", "MacOS", "FrecklesMenu"), 493);
+  await run7("codesign", ["--force", "-s", "-", MAC_APP]);
+  await mkdir7(join10(homedir3(), "Library", "LaunchAgents"), { recursive: true });
+  await writeFile5(
+    MAC_AGENT,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.frecklescloud.menu</string>
+  <key>ProgramArguments</key><array><string>/usr/bin/open</string><string>-a</string><string>${MAC_APP}</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+  <key>ProcessType</key><string>Interactive</string>
+</dict>
+</plist>
+`
+  );
+  const domain2 = `gui/${process.getuid?.() ?? 501}`;
+  await run7("launchctl", ["bootout", `${domain2}/com.frecklescloud.menu`]).catch(() => void 0);
+  await run7("launchctl", ["bootstrap", domain2, MAC_AGENT]).catch(() => run7("open", ["-a", MAC_APP]));
+  return `The Freckles dot is in the menu bar at the top of the screen and will come back whenever they sign in. It's in their Applications folder as "Freckles Menu" (Spotlight finds it by name) if they quit it.
+For the agent: tell the person to look for three small dots at the top right of the screen. Grey means this Mac isn't connected to Freckles yet or nothing is online; green means their online apps are answering. If it doesn't show, ask what they see.`;
+}
+async function removeMac() {
+  const domain2 = `gui/${process.getuid?.() ?? 501}`;
+  await run7("launchctl", ["bootout", `${domain2}/com.frecklescloud.menu`]).catch(() => void 0);
+  await run7("pkill", ["-x", "FrecklesMenu"]).catch(() => void 0);
+  await rm6(MAC_AGENT, { force: true });
+  await rm6(MAC_APP, { recursive: true, force: true });
+  return "The Freckles dot was removed.";
+}
+async function powershell(args) {
+  const dir = filesDir("windows");
+  if (!dir) throw new Error("The dot isn't in this copy of Freckles. Update the Freckles plugin, then try again.");
+  const { stdout } = await run7("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join10(dir, "Install-FrecklesTray.ps1"), ...args], { timeout: 6e4, windowsHide: true });
+  return stdout.trim();
+}
+async function menuDot(remove = false) {
+  if (process.platform !== "darwin" && process.platform !== "win32") return "The status dot is available on Windows and Mac for now.";
+  try {
+    if (remove) {
+      if (process.platform === "darwin") return await removeMac();
+      await powershell(["-Remove"]);
+      return "The Freckles dot was removed.";
+    }
+    await mkdir7(HOME, { recursive: true });
+    await writeFile5(OFFERED, (/* @__PURE__ */ new Date()).toISOString());
+    if (process.platform === "darwin") return await installMac();
+    return `${await powershell([])}
+For the agent: tell the person to look for three small dots next to the clock (it may be under the ^ arrow, and can be dragged out). Grey means this computer isn't connected to Freckles yet or nothing is online; green means their online apps are answering. If they quit it, typing "Freckles Menu" in the Start menu brings it back. If it doesn't show, ask what they see.`;
+  } catch (err) {
+    if (err instanceof Error && /isn't in this copy/.test(err.message)) throw err;
+    const e = new Error("The dot couldn't be installed on this computer.");
+    e.agent = err instanceof Error ? err.message : String(err);
+    throw e;
+  }
+}
+
+// packages/mcp/src/cloud.ts
+var COMPANION_VERSION = true ? "0.3.1" : "dev";
+var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
+var CONFIG = join11(HOME2, "secrets", "companion.json");
+var QUEUE = join11(HOME2, "companion-queue.json");
 var DEFAULT_URL = "https://app.frecklescloud.com";
 var NotConnected = class extends Error {
   constructor() {
@@ -32522,16 +32625,16 @@ var NotConnected = class extends Error {
 async function readConfig() {
   const url2 = process.env.FRECKLES_URL;
   try {
-    const c = JSON.parse(await readFile7(CONFIG, "utf8"));
+    const c = JSON.parse(await readFile8(CONFIG, "utf8"));
     return url2 && url2 !== c.url ? { url: url2 } : c;
   } catch {
     return { url: url2 ?? DEFAULT_URL };
   }
 }
 async function writeConfig(c) {
-  await mkdir7(dirname2(CONFIG), { recursive: true, mode: 448 });
-  await writeFile5(CONFIG, JSON.stringify(c, null, 2), { mode: 384 });
-  await chmod(CONFIG, 384);
+  await mkdir8(dirname2(CONFIG), { recursive: true, mode: 448 });
+  await writeFile6(CONFIG, JSON.stringify(c, null, 2), { mode: 384 });
+  await chmod2(CONFIG, 384);
 }
 async function api(c, method, path2, body) {
   let res;
@@ -32587,7 +32690,7 @@ async function connect(waitSeconds = 90, options = {}) {
     if (r2.status === "approved" && r2.token) {
       await writeConfig({ url: c.url, token: r2.token, login: r2.login });
       const found = await findMyApps({ quiet: true }).catch(() => "");
-      return `Connected to Freckles as ${r2.login}. From now on every saved version appears online, with its picture, under that account: the person must be signed in to Freckles as ${r2.login} to see it.${found ? ` ${found}` : ""}`;
+      return `Connected to Freckles as ${r2.login}. From now on every saved version appears online, with its picture, under that account: the person must be signed in to Freckles as ${r2.login} to see it.${found ? ` ${found}` : ""}${await offerLine().catch(() => "")}`;
     }
     if (r2.status === "expired") {
       await writeConfig({ url: c.url });
@@ -32600,17 +32703,17 @@ async function connect(waitSeconds = 90, options = {}) {
 async function queue(q) {
   const list3 = await readQueue();
   if (!list3.some((x) => x.path === q.path)) list3.push(q);
-  await writeFile5(QUEUE, JSON.stringify(list3));
+  await writeFile6(QUEUE, JSON.stringify(list3));
 }
 async function readQueue() {
   try {
-    return JSON.parse(await readFile7(QUEUE, "utf8"));
+    return JSON.parse(await readFile8(QUEUE, "utf8"));
   } catch {
     return [];
   }
 }
 async function forget(path2) {
-  await writeFile5(QUEUE, JSON.stringify((await readQueue()).filter((q) => q.path !== path2)));
+  await writeFile6(QUEUE, JSON.stringify((await readQueue()).filter((q) => q.path !== path2)));
 }
 async function ensureRegistered(c, app) {
   const side = await readSide(app.id);
@@ -32631,10 +32734,10 @@ async function reportAzure(c, app, appId) {
   const side = await readSide(app.id);
   const last = side?.cloud?.azureAt;
   if (process.env.CFP_AZURE === "off" || last && Date.now() - Date.parse(last) < 60 * 6e4) return;
-  const run8 = promisify7(execFile5);
+  const run9 = promisify8(execFile6);
   let subs = [];
   try {
-    subs = JSON.parse((await run8("az", ["account", "list", "-o", "json"], { timeout: 6e4 })).stdout);
+    subs = JSON.parse((await run9("az", ["account", "list", "-o", "json"], { timeout: 6e4 })).stdout);
   } catch {
     return;
   }
@@ -32660,7 +32763,7 @@ async function sendVersion(c, app, appId, v2, n) {
   let picture;
   if (v2.shot) {
     try {
-      picture = (await readFile7(v2.shot)).toString("base64");
+      picture = (await readFile8(v2.shot)).toString("base64");
     } catch {
     }
   }
@@ -32769,7 +32872,7 @@ async function disconnect() {
     said = err instanceof NotConnected;
   }
   await writeConfig({ url: c.url });
-  await rm6(QUEUE, { force: true });
+  await rm7(QUEUE, { force: true });
   for (const id of await listAppIds()) await updateSide(id, (s) => ({ ...s, cloud: void 0 })).catch(() => void 0);
   return `Disconnected this computer${c.login ? ` from ${c.login}` : ""}. Nothing saved was lost: every version is still here, and what was already online stays in that account. ${said ? "" : "Freckles couldn't be reached to remove the connection on its side: the person can remove this computer from Freckles, in their account, whenever they like. "}To connect to the same or another account, call connect_freckles.`;
 }
@@ -32788,19 +32891,19 @@ var frecklesHosting = {
     const c = await readConfig();
     if (!c.token) throw new NotConnected();
     const { appId } = await ensureRegistered(c, app);
-    const dir = await mkdtemp(join10(tmpdir(), "freckles-publish-"));
+    const dir = await mkdtemp(join11(tmpdir(), "freckles-publish-"));
     try {
       await archiveVersion(app, version2, dir);
       const heldBack = await holdBackRisky(dir);
       const kind = app.preview?.kind === "command" ? "container" : "static";
-      if (kind === "container" && !existsSync(join10(dir, "Dockerfile"))) {
+      if (kind === "container" && !existsSync2(join11(dir, "Dockerfile"))) {
         const err = new Error("This app runs its own server, and it needs one more file before it can be published.");
         err.agent = "Publishing an app with a server on Freckles Hosting needs a Dockerfile at the root of the published folder. Add one that installs dependencies, builds, and starts the app listening on the port in $PORT (default 8080). Save it as a version, then publish again.";
         throw err;
       }
-      if (kind === "static") await writeFile5(join10(dir, "Dockerfile"), STATIC_DOCKERFILE);
+      if (kind === "static") await writeFile6(join11(dir, "Dockerfile"), STATIC_DOCKERFILE);
       const mac = process.platform === "darwin" ? ["--no-xattrs", "--no-mac-metadata"] : [];
-      const { stdout } = await promisify7(execFile5)("tar", [...mac, "-czf", "-", "-C", dir, "."], {
+      const { stdout } = await promisify8(execFile6)("tar", [...mac, "-czf", "-", "-C", dir, "."], {
         encoding: "buffer",
         maxBuffer: 200 * 1024 * 1024,
         env: { ...process.env, COPYFILE_DISABLE: "1" }
@@ -32836,7 +32939,7 @@ var frecklesHosting = {
       }
       throw new Error("Publishing is taking longer than usual. It carries on in Freckles; call whats_new in a few minutes.");
     } finally {
-      await rm6(dir, { recursive: true, force: true });
+      await rm7(dir, { recursive: true, force: true });
     }
   },
   async unpublish(app) {
@@ -32938,8 +33041,8 @@ async function pauseUnused(days, confirm) {
 }
 
 // packages/mcp/src/leave.ts
-var run7 = promisify8(execFile6);
-var has = async (cmd) => run7(cmd, ["--version"]).then(() => true, () => false);
+var run8 = promisify9(execFile7);
+var has = async (cmd) => run8(cmd, ["--version"]).then(() => true, () => false);
 async function takeItWithYou(app, to) {
   const side = await readSide(app.id);
   if (side?.cloud?.own || await remoteUrl(app.path).catch(() => void 0)) {
@@ -32949,7 +33052,7 @@ async function takeItWithYou(app, to) {
   const fullName = url2.match(/[/:]([^/:]+\/[^/:]+?)(?:\.git)?$/)?.[1];
   if (!fullName) throw new Error(`"${to}" doesn't look like a repository. Use owner/name, like "ana/booking-page".`);
   if (url2.startsWith("https://github.com/") && !/^https?:\/\//.test(to) && await has("gh")) {
-    await run7("gh", ["repo", "create", fullName, "--private", "--description", `${appName(app)}, kept with Freckles`]).catch(() => void 0);
+    await run8("gh", ["repo", "create", fullName, "--private", "--description", `${appName(app)}, kept with Freckles`]).catch(() => void 0);
   }
   try {
     await git(app.path, "push", url2, `${app.liveBranch}:refs/heads/main`, "refs/heads/idea/*:refs/heads/idea/*");
@@ -32994,40 +33097,40 @@ COPY . /srv
 EXPOSE 8080
 CMD ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
 `;
-async function leaveKit(app, into = join11(homedir4(), "Downloads")) {
+async function leaveKit(app, into = join12(homedir5(), "Downloads")) {
   const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const safe = appName(app).replace(/[^\w.-]+/g, "-");
-  const work = await mkdtemp2(join11(tmpdir2(), "freckles-kit-"));
-  const dir = join11(work, `${safe}-leave-kit`);
+  const work = await mkdtemp2(join12(tmpdir2(), "freckles-kit-"));
+  const dir = join12(work, `${safe}-leave-kit`);
   try {
-    await mkdir8(join11(dir, "pictures"), { recursive: true });
-    await git(app.path, "bundle", "create", join11(dir, "history.bundle"), "--all");
+    await mkdir9(join12(dir, "pictures"), { recursive: true });
+    await git(app.path, "bundle", "create", join12(dir, "history.bundle"), "--all");
     const versions = await listVersions(app, { limit: 1e4 });
     const newest = versions[0];
     if (newest) {
-      await archiveVersion(app, newest, join11(dir, "code"));
-      await holdBackRisky(join11(dir, "code"));
+      await archiveVersion(app, newest, join12(dir, "code"));
+      await holdBackRisky(join12(dir, "code"));
     }
-    for (const v2 of versions) if (v2.shot && existsSync2(v2.shot)) await cp(v2.shot, join11(dir, "pictures", `${v2.shortId}.png`)).catch(() => void 0);
-    await writeFile6(
-      join11(dir, "versions.md"),
+    for (const v2 of versions) if (v2.shot && existsSync3(v2.shot)) await cp(v2.shot, join12(dir, "pictures", `${v2.shortId}.png`)).catch(() => void 0);
+    await writeFile7(
+      join12(dir, "versions.md"),
       `# Versions of ${appName(app)}
 
 ${versions.map((v2) => `- **${v2.savedAt.slice(0, 16).replace("T", " ")}** \xB7 ${v2.summary}${v2.detail ? `
   ${v2.detail.replace(/\n/g, " ")}` : ""}`).join("\n")}
 `
     );
-    await mkdir8(join11(dir, "infra"));
-    const own = join11(dir, "code", "Dockerfile");
-    await writeFile6(join11(dir, "infra", "Dockerfile"), existsSync2(own) ? await (await import("node:fs/promises")).readFile(own, "utf8") : STATIC_DOCKERFILE2);
-    await writeFile6(join11(dir, "README.md"), readme(app, versions, app.published?.url));
-    await mkdir8(into, { recursive: true });
-    const zip = join11(into, `${safe}-leave-kit-${stamp}.zip`);
-    await rm7(zip, { force: true });
-    await run7("zip", ["-qr", zip, `${safe}-leave-kit`], { cwd: work, maxBuffer: 64 * 1024 * 1024 });
+    await mkdir9(join12(dir, "infra"));
+    const own = join12(dir, "code", "Dockerfile");
+    await writeFile7(join12(dir, "infra", "Dockerfile"), existsSync3(own) ? await (await import("node:fs/promises")).readFile(own, "utf8") : STATIC_DOCKERFILE2);
+    await writeFile7(join12(dir, "README.md"), readme(app, versions, app.published?.url));
+    await mkdir9(into, { recursive: true });
+    const zip = join12(into, `${safe}-leave-kit-${stamp}.zip`);
+    await rm8(zip, { force: true });
+    await run8("zip", ["-qr", zip, `${safe}-leave-kit`], { cwd: work, maxBuffer: 64 * 1024 * 1024 });
     return zip;
   } finally {
-    await rm7(work, { recursive: true, force: true });
+    await rm8(work, { recursive: true, force: true });
   }
 }
 var ownAzure = {
@@ -33039,87 +33142,54 @@ var ownAzure = {
   },
   async publish(app, version2) {
     if (!await has("az")) throw new Error("Publishing to your own Azure needs the Azure CLI signed in on this computer (az login).");
-    const account = await run7("az", ["account", "show", "-o", "json"]).catch(() => void 0);
+    const account = await run8("az", ["account", "show", "-o", "json"]).catch(() => void 0);
     if (!account) throw new Error("This computer isn't signed in to Azure. Sign in with az login, then try again.");
     const name = appName(app).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || "app";
     const group = `rg-freckles-${name}`;
-    const dir = await mkdtemp2(join11(tmpdir2(), "freckles-own-"));
+    const dir = await mkdtemp2(join12(tmpdir2(), "freckles-own-"));
     try {
       await archiveVersion(app, version2, dir);
       const heldBack = await holdBackRisky(dir);
-      await run7("az", ["group", "create", "-n", group, "-l", "westeurope", "--tags", "freckles:moved-out=true", "-o", "none"]);
+      await run8("az", ["group", "create", "-n", group, "-l", "westeurope", "--tags", "freckles:moved-out=true", "-o", "none"]);
       if (app.preview?.kind !== "command") {
-        await run7("az", ["staticwebapp", "create", "-n", `swa-${name}`, "-g", group, "-l", "westeurope", "--sku", "Free", "-o", "none"]).catch(() => void 0);
-        const token = (await run7("az", ["staticwebapp", "secrets", "list", "-n", `swa-${name}`, "-g", group, "--query", "properties.apiKey", "-o", "tsv"])).stdout.trim();
-        const host2 = (await run7("az", ["staticwebapp", "show", "-n", `swa-${name}`, "-g", group, "--query", "defaultHostname", "-o", "tsv"])).stdout.trim();
-        await run7("npx", ["--yes", "@azure/static-web-apps-cli@2", "deploy", dir, "--deployment-token", token, "--env", "production"], {
+        await run8("az", ["staticwebapp", "create", "-n", `swa-${name}`, "-g", group, "-l", "westeurope", "--sku", "Free", "-o", "none"]).catch(() => void 0);
+        const token = (await run8("az", ["staticwebapp", "secrets", "list", "-n", `swa-${name}`, "-g", group, "--query", "properties.apiKey", "-o", "tsv"])).stdout.trim();
+        const host2 = (await run8("az", ["staticwebapp", "show", "-n", `swa-${name}`, "-g", group, "--query", "defaultHostname", "-o", "tsv"])).stdout.trim();
+        await run8("npx", ["--yes", "@azure/static-web-apps-cli@2", "deploy", dir, "--deployment-token", token, "--env", "production"], {
           maxBuffer: 64 * 1024 * 1024,
           timeout: 10 * 6e4
         });
         return { url: `https://${host2}`, heldBack };
       }
-      if (!existsSync2(join11(dir, "Dockerfile"))) {
+      if (!existsSync3(join12(dir, "Dockerfile"))) {
         const e = new Error("This app runs its own server, and needs one more file before it can run in Azure.");
         e.agent = "Add a Dockerfile at the root that builds the app and starts it listening on $PORT (default 8080), save it as a version, then try again.";
         throw e;
       }
       const port = String(app.preview.port);
-      const out = await run7(
+      const out = await run8(
         "az",
         ["containerapp", "up", "-n", `ca-${name}`, "-g", group, "-l", "westeurope", "--source", dir, "--ingress", "external", "--target-port", port, "--env-vars", `PORT=${port}`, "-o", "json"],
         { maxBuffer: 64 * 1024 * 1024, timeout: 20 * 6e4 }
       );
       const fqdn = JSON.parse(out.stdout || "{}").properties?.configuration?.ingress?.fqdn;
-      const host = fqdn ?? (await run7("az", ["containerapp", "show", "-n", `ca-${name}`, "-g", group, "--query", "properties.configuration.ingress.fqdn", "-o", "tsv"])).stdout.trim();
+      const host = fqdn ?? (await run8("az", ["containerapp", "show", "-n", `ca-${name}`, "-g", group, "--query", "properties.configuration.ingress.fqdn", "-o", "tsv"])).stdout.trim();
       return { url: `https://${host}`, heldBack };
     } finally {
-      await rm7(dir, { recursive: true, force: true });
+      await rm8(dir, { recursive: true, force: true });
     }
   },
   async unpublish(app) {
     const name = appName(app).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || "app";
     const group = `rg-freckles-${name}`;
-    const tag = await run7("az", ["group", "show", "-n", group, "--query", 'tags."freckles:moved-out"', "-o", "tsv"]).then((r2) => r2.stdout.trim(), () => "");
+    const tag = await run8("az", ["group", "show", "-n", group, "--query", 'tags."freckles:moved-out"', "-o", "tsv"]).then((r2) => r2.stdout.trim(), () => "");
     if (tag !== "true") throw new Error(`Freckles didn't create ${group}, so it won't delete it. Take the app down in your Azure yourself if you want to.`);
-    await run7("az", ["group", "delete", "-n", group, "--yes", "--no-wait"]);
+    await run8("az", ["group", "delete", "-n", group, "--yes", "--no-wait"]);
   },
   async resources() {
     return [];
   }
 };
-
-// packages/mcp/src/menu-dot.ts
-import { execFile as execFile7 } from "node:child_process";
-import { existsSync as existsSync3 } from "node:fs";
-import { promisify as promisify9 } from "node:util";
-import { fileURLToPath } from "node:url";
-function scriptsDir() {
-  for (const rel of ["../menubar/windows/", "../../../menubar/windows/"]) {
-    const dir = fileURLToPath(new URL(rel, import.meta.url));
-    if (existsSync3(`${dir}Install-FrecklesTray.ps1`)) return dir;
-  }
-  return void 0;
-}
-async function menuDot(remove = false) {
-  if (process.platform === "darwin")
-    return "On a Mac the dot is a small app that isn't packaged for installing yet. It lives in the menubar folder of the Freckles source (menubar/README.md says how to build it). On Windows this works with one call.";
-  if (process.platform !== "win32") return "The dot is available on Windows and Mac only for now.";
-  const dir = scriptsDir();
-  if (!dir) throw new Error("The dot's files aren't in this copy of Freckles. Update the Freckles plugin, then try again.");
-  try {
-    const { stdout } = await promisify9(execFile7)(
-      "powershell.exe",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", `${dir}Install-FrecklesTray.ps1`, ...remove ? ["-Remove"] : []],
-      { timeout: 6e4, windowsHide: true }
-    );
-    return remove ? "The Freckles dot was removed." : `${stdout.trim()}
-For the agent: tell the person to look for three small dots next to the clock (it may be under the ^ arrow, and can be dragged out). Grey means this computer isn't connected to Freckles yet or nothing is online; green means their online apps are answering. It's new and untried on some Windows setups: if it doesn't show, ask them what they see.`;
-  } catch (err) {
-    const e = new Error("The dot couldn't be installed on this computer.");
-    e.agent = err instanceof Error ? err.message : String(err);
-    throw e;
-  }
-}
 
 // packages/mcp/src/timeline-view.ts
 var TIMELINE_URI = "ui://freckles/timeline.html";
@@ -33364,7 +33434,7 @@ var TIMELINE_HTML = `<!doctype html>
 `;
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.3.0" : "dev";
+var VERSION = true ? "0.3.1" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -33883,7 +33953,7 @@ tool(
 );
 tool(
   "install_menu_dot",
-  "Put the Freckles dot next to the clock on this computer (Windows), so the person sees at a glance whether their apps are working: green all fine, amber needs a look, red not answering, grey not connected. It starts by itself when they sign in. Only when the person asks for it. Pass remove to take it away.",
+  "Put the Freckles dot on this computer (next to the clock on Windows, in the menu bar on a Mac), so the person sees at a glance whether their apps are working: green all fine, amber needs a look, red not answering, grey not connected. It starts by itself when they sign in. Offer it once after connecting; install it only when they say yes. Pass remove to take it away.",
   { remove: external_exports.boolean().optional().describe("Remove the dot instead of installing it.") },
   async ({ remove }) => menuDot(remove)
 );
