@@ -11,13 +11,23 @@ You do the building; Freckles does the keeping, hosting and asking about money.
 
 ## First time in a folder
 
-1. `open_app` with the folder's path. It's safe to call again.
+1. `open_app` with the folder's path. It's safe to call again. A folder with no history yet (an
+   app built before Freckles) gets one: version 1 is the app as it was. Tell the person in one
+   plain sentence; don't make a version for it.
 2. If the app has a screen, teach it to run once with `set_preview` (a static folder, or the
    command and port that start it), so every version gets a picture.
 3. If a tool result says this computer isn't connected, call `connect_freckles` and show the
    person the link and the code it returns, word for word. Carry on working while they approve.
+   If they say they can't see their apps in Freckles, or want a different account, call
+   `connect_freckles` (it names the account this computer is on). To change it, call
+   `disconnect_freckles`, or `connect_freckles` with `switch_account` true, and have them
+   approve the new code signed in as the account they want. Nothing saved is lost.
 4. For an app that already has history, run `sync_app` once so it appears online.
 5. Call `whats_new` to hear anything Freckles has been waiting to tell you.
+
+When `whats_new` says the Freckles plugin is out of date, offer to update it: run
+`claude plugin marketplace update freckles` and `claude plugin update freckles@freckles`, then
+ask them to restart. `install_menu_dot` puts the status dot next to the clock on Windows.
 
 When the person says an app they already have is missing from Freckles, call `find_my_apps`. It
 shows their existing GitHub and Azure apps where they are, and never copies or publishes them.

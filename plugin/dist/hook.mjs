@@ -69,7 +69,7 @@ var FORMAT = ["%H", "%s", "%b", "%aI", "%an"].join(FIELD) + RECORD;
 
 // packages/mcp/src/cloud.ts
 import { chmod, mkdir as mkdir2, mkdtemp, readFile as readFile2, rm, writeFile as writeFile2 } from "node:fs/promises";
-import { homedir as homedir2 } from "node:os";
+import { homedir as homedir2, hostname } from "node:os";
 import { basename, dirname, join as join2 } from "node:path";
 
 // packages/publish/src/this-computer.ts
@@ -180,6 +180,7 @@ import { promisify as promisify6 } from "node:util";
 var run6 = promisify6(execFile4);
 
 // packages/mcp/src/cloud.ts
+var COMPANION_VERSION = true ? "0.3.0" : "dev";
 var HOME = process.env.CFP_HOME ?? join2(homedir2(), ".cloud-for-personal");
 var CONFIG = join2(HOME, "secrets", "companion.json");
 var QUEUE = join2(HOME, "companion-queue.json");
@@ -203,7 +204,7 @@ async function api(c, method, path, body) {
   try {
     res = await fetch(`${c.url}${path}`, {
       method,
-      headers: { "content-type": "application/json", ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
+      headers: { "content-type": "application/json", "x-freckles-plugin": COMPANION_VERSION, ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
       body: body === void 0 ? void 0 : JSON.stringify(body),
       signal: AbortSignal.timeout(6e4)
     });

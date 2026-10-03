@@ -48,3 +48,18 @@ Then open Copilot Chat, switch to **Agent** mode, click the tools button and tur
 Ask your agent: "Connect to Freckles". The first time, it shows you a link and a short code: open the link, check the code, and your computer is connected. From then on every finished step appears in [Freckles](https://app.frecklescloud.com) with a picture.
 
 Pictures use Google Chrome or Microsoft Edge if you have one of them installed.
+
+## Updating
+
+Your Freckles page tells you when your agent's plugin is out of date, and your agent hears about it too. To update in Claude Code (this also works for the Claude desktop app), tell it "Update the Freckles plugin", or run:
+
+```bash
+claude plugin marketplace update freckles
+claude plugin update freckles@freckles
+```
+
+Then quit and reopen your agent. With Codex, Copilot or Cursor, restarting the agent is enough; if it still shows the old tools, clear npx's saved copy (`rm -rf ~/.npm/_npx` on a Mac or Linux).
+
+## The status dot on Windows
+
+Ask your agent to "install the Freckles dot". It puts three small dots next to the clock: green when your online apps are answering, amber when one needs a look, red when one isn't answering, grey when this computer isn't connected yet.

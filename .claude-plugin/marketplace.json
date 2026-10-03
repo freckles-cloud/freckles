@@ -10,7 +10,7 @@
       "name": "freckles",
       "source": "./plugin",
       "description": "Every step your agent finishes becomes a version with a picture of your app, kept and published by Freckles.",
-      "version": "0.2.9"
+      "version": "0.3.0"
     }
   ]
 }

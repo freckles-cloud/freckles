@@ -14608,7 +14608,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -14635,7 +14635,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -15465,7 +15465,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -15834,7 +15834,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -28533,7 +28533,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error40) {
@@ -28550,7 +28550,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const earlyReject = (error40) => {
         reject(error40);
       };
@@ -28628,7 +28628,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve3(parseResult.data);
+            resolve4(parseResult.data);
           }
         } catch (error40) {
           reject(error40);
@@ -28889,12 +28889,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve3, interval);
+      const timeoutId = setTimeout(resolve4, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -29985,7 +29985,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -30649,12 +30649,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve3) => {
+    return new Promise((resolve4) => {
       const json3 = serializeMessage(message);
       if (this._stdout.write(json3)) {
-        resolve3();
+        resolve4();
       } else {
-        this._stdout.once("drain", resolve3);
+        this._stdout.once("drain", resolve4);
       }
     });
   }
@@ -30663,6 +30663,11 @@ var StdioServerTransport = class {
 // packages/mcp/src/index.ts
 import { stat as stat4 } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
+
+// packages/core/src/adopt.ts
+import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 
 // packages/core/src/git.ts
 import { execFile } from "node:child_process";
@@ -30731,41 +30736,126 @@ async function rootSha(cwd) {
   return first;
 }
 
+// packages/core/src/adopt.ts
+function notAnApp(dir) {
+  const home = homedir();
+  if (dir === dirname(dir)) return "that's the top of a drive, not an app";
+  if (dir === home) return "that's the home folder, not an app";
+  if (dirname(dir) === home && /^(desktop|documents|downloads|library|pictures|movies|music|public|applications)$/i.test(basename(dir)))
+    return `that's your ${basename(dir)} folder, not an app. Open the app's own folder inside it`;
+  return void 0;
+}
+var TOO_MANY = 2e4;
+var ALWAYS_LEFT_OUT = [
+  "node_modules/",
+  ".env",
+  ".env.*",
+  "!.env.example",
+  "!.env.sample",
+  "*.pem",
+  "*.key",
+  "*.pfx",
+  "*.p12",
+  "id_rsa",
+  "id_ed25519",
+  ".aws/",
+  ".ssh/",
+  ".venv/",
+  "venv/",
+  "__pycache__/",
+  ".next/",
+  ".turbo/",
+  ".DS_Store"
+];
+async function hasVersions(dir) {
+  try {
+    await git(dir, "rev-parse", "--verify", "HEAD");
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function startHistory(path2) {
+  const dir = resolve(path2);
+  const refused = notAnApp(dir);
+  if (refused) throw new Error(`Freckles won't start keeping versions here: ${refused}.`);
+  const repo = await isRepo(dir);
+  if (repo && await hasVersions(dir)) return void 0;
+  const was = repo ? "no-versions" : "no-history";
+  if (!repo) {
+    await git(dir, "init", "--quiet");
+    await git(dir, "symbolic-ref", "HEAD", "refs/heads/main");
+  }
+  let wroteIgnore = false;
+  try {
+    for (const [key, fallback] of [["user.name", "Freckles"], ["user.email", "freckles@users.noreply.frecklescloud.com"]]) {
+      const has2 = await git(dir, "config", "--get", key).catch(() => "");
+      if (!has2) await git(dir, "config", "--local", key, fallback);
+    }
+    const gitDir = resolve(dir, await git(dir, "rev-parse", "--git-dir"));
+    await appendFile(join(gitDir, "info", "exclude"), `
+# Left out by Freckles: passwords, keys and what can be rebuilt
+${ALWAYS_LEFT_OUT.join("\n")}
+`).catch(() => void 0);
+    const ignoreFile = join(dir, ".gitignore");
+    if (!await readFile(ignoreFile, "utf8").then(() => true, () => false)) {
+      await writeFile(ignoreFile, `${ALWAYS_LEFT_OUT.join("\n")}
+`);
+      wroteIgnore = true;
+    }
+    const loose = (await git(dir, "ls-files", "--others", "--exclude-standard", "-z")).split("\0").filter(Boolean);
+    if (loose.length > TOO_MANY) {
+      const err = new Error(`That folder holds ${loose.length.toLocaleString("en")} files, which is more than one app. Pick the app's own folder.`);
+      err.agent = `Refused to start a history in ${dir}: ${loose.length} untracked files (limit ${TOO_MANY}). Nothing was saved. Ask which subfolder is the app, or add the large folders to .gitignore and call open_app again.`;
+      throw err;
+    }
+    await git(dir, "add", "--all");
+    await git(dir, "commit", "--quiet", "--allow-empty", "-m", "Starting point: the app as it was when Freckles first saw it");
+    const version2 = await git(dir, "rev-parse", "HEAD");
+    const files = (await git(dir, "ls-files", "-z")).split("\0").filter(Boolean).length;
+    return { was, version: version2, files, wroteIgnore };
+  } catch (err) {
+    if (!repo) await rm(join(dir, ".git"), { recursive: true, force: true });
+    if (wroteIgnore) await rm(join(dir, ".gitignore"), { force: true });
+    throw err;
+  }
+}
+
 // packages/core/src/app.ts
-import { basename, resolve } from "node:path";
+import { basename as basename2, resolve as resolve2 } from "node:path";
 
 // packages/core/src/store.ts
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-var ROOT = process.env.CFP_HOME ?? join(homedir(), ".cloud-for-personal");
+import { mkdir, readdir, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
+import { homedir as homedir2 } from "node:os";
+import { join as join2 } from "node:path";
+var ROOT = process.env.CFP_HOME ?? join2(homedir2(), ".cloud-for-personal");
 function appDir(appId) {
-  return join(ROOT, "apps", appId);
+  return join2(ROOT, "apps", appId);
 }
 function shotsDir(appId) {
-  return join(appDir(appId), "shots");
+  return join2(appDir(appId), "shots");
 }
 function publishedDir(appId) {
-  return join(appDir(appId), "published");
+  return join2(appDir(appId), "published");
 }
 function sidePath(appId) {
-  return join(appDir(appId), "app.json");
+  return join2(appDir(appId), "app.json");
 }
 async function readSide(appId) {
   try {
-    return JSON.parse(await readFile(sidePath(appId), "utf8"));
+    return JSON.parse(await readFile2(sidePath(appId), "utf8"));
   } catch {
     return void 0;
   }
 }
 async function writeSide(appId, side) {
   await mkdir(appDir(appId), { recursive: true });
-  await writeFile(sidePath(appId), `${JSON.stringify(side, null, 2)}
+  await writeFile2(sidePath(appId), `${JSON.stringify(side, null, 2)}
 `);
 }
 async function listAppIds() {
   try {
-    const entries = await readdir(join(ROOT, "apps"), { withFileTypes: true });
+    const entries = await readdir(join2(ROOT, "apps"), { withFileTypes: true });
     return entries.filter((e) => e.isDirectory()).map((e) => e.name);
   } catch {
     return [];
@@ -30781,8 +30871,14 @@ async function updateSide(appId, fn) {
 
 // packages/core/src/app.ts
 async function openApp(path2, options = {}) {
-  const dir = resolve(path2);
-  if (!await isRepo(dir)) throw new Error(`${dir} is not a git repository`);
+  const dir = resolve2(path2);
+  let started;
+  if (options.startHistory) started = await startHistory(dir);
+  if (!await isRepo(dir) || !await hasVersions(dir)) {
+    const err = new Error(`${dir} has no saved history yet, so Freckles can't keep versions of it.`);
+    err.agent = `${dir} has no git history (not a repository, or one with no commits). Call open_app with its path: that starts its history with one version of the app as it is, adding only .git and, when there is none, a .gitignore.`;
+    throw err;
+  }
   const id = await rootSha(dir);
   const existing = await readSide(id);
   const side = {
@@ -30793,11 +30889,12 @@ async function openApp(path2, options = {}) {
     preview: options.preview ?? existing?.preview,
     versions: existing?.versions ?? {}
   };
+  if (started) side.versions = { ...side.versions, [started.version]: { ...side.versions[started.version], plain: true } };
   await writeSide(id, side);
-  return toApp(id, side);
+  return { ...toApp(id, side), startedHistory: started };
 }
 function appName(app) {
-  return basename(app.path);
+  return basename2(app.path);
 }
 async function loadApp(id) {
   const side = await readSide(id);
@@ -31032,22 +31129,22 @@ async function dropIdea(app, name) {
 }
 
 // packages/core/src/workspace.ts
-import { mkdir as mkdir2, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
-import { join as join2 } from "node:path";
+import { mkdir as mkdir2, readFile as readFile3, writeFile as writeFile3 } from "node:fs/promises";
+import { join as join3 } from "node:path";
 var DEFAULT_WARN_AT = [80, 100];
 function path(name) {
-  return join2(ROOT, "workspaces", `${name}.json`);
+  return join3(ROOT, "workspaces", `${name}.json`);
 }
 async function readWorkspace(name = "personal") {
   try {
-    return JSON.parse(await readFile2(path(name), "utf8"));
+    return JSON.parse(await readFile3(path(name), "utf8"));
   } catch {
     return { name };
   }
 }
 async function writeWorkspace(side) {
-  await mkdir2(join2(ROOT, "workspaces"), { recursive: true });
-  await writeFile2(path(side.name), `${JSON.stringify(side, null, 2)}
+  await mkdir2(join3(ROOT, "workspaces"), { recursive: true });
+  await writeFile3(path(side.name), `${JSON.stringify(side, null, 2)}
 `);
 }
 var EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -31119,15 +31216,15 @@ function limitStatus(limit, spentMinor2) {
 }
 
 // packages/shots/src/index.ts
-import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
-import { join as join4 } from "node:path";
+import { mkdir as mkdir3, readFile as readFile5, writeFile as writeFile4 } from "node:fs/promises";
+import { join as join5 } from "node:path";
 
 // packages/shots/src/serve.ts
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { extname, join as join3, normalize, resolve as resolve2 } from "node:path";
+import { extname, join as join4, normalize, resolve as resolve3 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 var TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -31149,11 +31246,11 @@ async function start(preview, appPath2) {
   return preview.kind === "static" ? startStatic(preview, appPath2) : startCommand(preview, appPath2);
 }
 async function startStatic(preview, appPath2) {
-  const root = resolve2(appPath2, preview.dir ?? ".");
+  const root = resolve3(appPath2, preview.dir ?? ".");
   const server2 = createServer((req, res) => {
     void (async () => {
       const asked = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
-      const target = resolve2(root, `.${normalize(asked)}`);
+      const target = resolve3(root, `.${normalize(asked)}`);
       if (target !== root && !target.startsWith(root + "/")) {
         res.writeHead(403).end("outside the app");
         return;
@@ -31183,7 +31280,7 @@ async function resolveFile(target) {
     const info = await stat(target);
     if (info.isFile()) return target;
     if (info.isDirectory()) {
-      const index = join3(target, "index.html");
+      const index = join4(target, "index.html");
       return (await stat(index)).isFile() ? index : void 0;
     }
   } catch {
@@ -31354,13 +31451,13 @@ var import_pngjs = __toESM(require_png(), 1);
 
 // packages/shots/src/thumbnail.ts
 var import_pngjs2 = __toESM(require_png(), 1);
-import { readFile as readFile3 } from "node:fs/promises";
+import { readFile as readFile4 } from "node:fs/promises";
 import { extname as extname2 } from "node:path";
 var MAX_RAW_BYTES = 300 * 1024;
 async function thumbnail(path2, width = 320) {
   let bytes;
   try {
-    bytes = await readFile3(path2);
+    bytes = await readFile4(path2);
   } catch {
     return void 0;
   }
@@ -31438,7 +31535,7 @@ async function capture(app, versionId) {
   try {
     const dir = shotsDir(app.id);
     await mkdir3(dir, { recursive: true });
-    const file3 = join4(dir, `${versionId}.png`);
+    const file3 = join5(dir, `${versionId}.png`);
     browser = await launch();
     const page = await browser.newPage({ viewport: VIEWPORT });
     const response = await page.goto(running.url, { waitUntil: "load", timeout: 3e4 });
@@ -31448,7 +31545,7 @@ async function capture(app, versionId) {
     await page.waitForLoadState("networkidle", { timeout: 5e3 }).catch(() => {
     });
     await page.screenshot({ path: file3 });
-    await keepLayout(app, versionId, page, join4(dir, `${versionId}.layout.json`));
+    await keepLayout(app, versionId, page, join5(dir, `${versionId}.layout.json`));
     return { path: file3 };
   } catch (err) {
     return { skipped: `Could not photograph the app: ${err.message}` };
@@ -31465,7 +31562,7 @@ async function keepLayout(app, versionId, page, file3) {
       page.evaluate(readLayoutInPage),
       new Promise((_2, no) => setTimeout(() => no(new Error("layout took too long")), 5e3))
     ]);
-    await writeFile3(file3, `${JSON.stringify(tidyLayout(raw))}
+    await writeFile4(file3, `${JSON.stringify(tidyLayout(raw))}
 `);
     if (await readSide(app.id)) {
       await updateSide(app.id, (side) => ({
@@ -31575,8 +31672,8 @@ var TQ = "io.modelcontextprotocol/ui";
 
 // packages/publish/src/this-computer.ts
 import { exec as exec2, execFile as execFile3 } from "node:child_process";
-import { readdir as readdir3, rm as rm4, stat as stat3 } from "node:fs/promises";
-import { join as join7 } from "node:path";
+import { readdir as readdir3, rm as rm5, stat as stat3 } from "node:fs/promises";
+import { join as join8 } from "node:path";
 import { promisify as promisify3 } from "node:util";
 
 // packages/publish/src/resources.ts
@@ -31612,10 +31709,10 @@ function money(minor, currency = "GBP") {
 
 // packages/publish/src/information.ts
 import { DatabaseSync } from "node:sqlite";
-import { mkdir as mkdir4, rm, stat as stat2 } from "node:fs/promises";
-import { join as join5 } from "node:path";
+import { mkdir as mkdir4, rm as rm2, stat as stat2 } from "node:fs/promises";
+import { join as join6 } from "node:path";
 function file2(app) {
-  return join5(appDir(app.id), "information.db");
+  return join6(appDir(app.id), "information.db");
 }
 function open(app) {
   const db = new DatabaseSync(file2(app));
@@ -31703,8 +31800,8 @@ async function stop(appId) {
 }
 
 // packages/publish/src/risky.ts
-import { readdir as readdir2, rm as rm2 } from "node:fs/promises";
-import { join as join6, relative } from "node:path";
+import { readdir as readdir2, rm as rm3 } from "node:fs/promises";
+import { join as join7, relative } from "node:path";
 var RISKY = [
   /^\.env(\..*)?$/i,
   /^\.npmrc$/i,
@@ -31724,11 +31821,11 @@ async function holdBackRisky(root) {
   async function walk(dir) {
     const entries = await readdir2(dir, { withFileTypes: true });
     for (const entry of entries) {
-      const full = join6(dir, entry.name);
+      const full = join7(dir, entry.name);
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name) || RISKY.some((r2) => r2.test(entry.name))) {
           held.push(relative(root, full));
-          await rm2(full, { recursive: true, force: true });
+          await rm3(full, { recursive: true, force: true });
           continue;
         }
         await walk(full);
@@ -31736,7 +31833,7 @@ async function holdBackRisky(root) {
       }
       if (RISKY.some((r2) => r2.test(entry.name))) {
         held.push(relative(root, full));
-        await rm2(full, { force: true });
+        await rm3(full, { force: true });
       }
     }
   }
@@ -31752,12 +31849,12 @@ function heldBackMessage(held) {
 
 // packages/publish/src/lay-out.ts
 import { exec, execFile as execFile2 } from "node:child_process";
-import { mkdir as mkdir5, rm as rm3 } from "node:fs/promises";
+import { mkdir as mkdir5, rm as rm4 } from "node:fs/promises";
 import { promisify as promisify2 } from "node:util";
 var run2 = promisify2(exec);
 var runFile = promisify2(execFile2);
 async function archiveVersion(app, version2, out) {
-  await rm3(out, { recursive: true, force: true });
+  await rm4(out, { recursive: true, force: true });
   await mkdir5(out, { recursive: true });
   const subdir = app.preview?.kind === "static" ? app.preview.dir : void 0;
   const prefix = subdir && subdir !== "." ? `${subdir.replace(/\/$/, "")}/` : "";
@@ -31843,7 +31940,7 @@ var ThisComputer = class {
   }
   async unpublish(app) {
     await stop(app.id);
-    await rm4(publishedDir(app.id), { recursive: true, force: true });
+    await rm5(publishedDir(app.id), { recursive: true, force: true });
   }
   async spend() {
     return { spentMinor: 0, currency: "GBP" };
@@ -31900,7 +31997,7 @@ async function countPages(dir) {
       return;
     }
     for (const entry of entries) {
-      const full = join7(at, entry.name);
+      const full = join8(at, entry.name);
       if (entry.isDirectory()) await walk(full);
       else {
         files += 1;
@@ -31920,8 +32017,8 @@ function readableSize(bytes) {
 
 // packages/publish/src/azure-read.ts
 import { exec as exec3 } from "node:child_process";
-import { readFile as readFile5 } from "node:fs/promises";
-import { join as join8 } from "node:path";
+import { readFile as readFile6 } from "node:fs/promises";
+import { join as join9 } from "node:path";
 import { promisify as promisify4 } from "node:util";
 var run4 = promisify4(exec3);
 var KINDS = {
@@ -32044,7 +32141,7 @@ async function namesInRepo(path2) {
   for (const file3 of files) {
     let text;
     try {
-      text = await readFile5(join8(path2, file3), "utf8");
+      text = await readFile6(join9(path2, file3), "utf8");
     } catch {
       continue;
     }
@@ -32213,7 +32310,7 @@ async function json2(cmd, args) {
     return void 0;
   }
 }
-var KIND = {
+var ALONGSIDE_KIND = {
   "microsoft.communication/communicationservices": "email",
   "microsoft.communication/emailservices": "email",
   "microsoft.storage/storageaccounts": "files",
@@ -32280,7 +32377,7 @@ async function findExisting() {
     };
     const group = byGroup.get(`${site.subscription}/${site.resourceGroup}`.toLowerCase()) ?? [];
     const others = group.filter((r2) => r2.name !== site.name);
-    if (others.length) app.alongside = others.map((r2) => ({ kind: KIND[r2.type.toLowerCase()] ?? "other", name: r2.name, type: r2.type }));
+    if (others.length) app.alongside = others.map((r2) => ({ kind: ALONGSIDE_KIND[r2.type.toLowerCase()] ?? "other", name: r2.name, type: r2.type }));
   }
   const queue2 = [...apps];
   await Promise.all(
@@ -32376,7 +32473,7 @@ ${lines.map((l) => `  ${l}`).join("\n")}`;
 // packages/mcp/src/instructions.ts
 var INSTRUCTIONS = `Freckles keeps the person's app as versions with pictures, publishes it, and knows what it costs. The person may not be a developer.
 
-First time in a folder: call open_app with the folder's path, then set_preview if the app has a screen, so every version gets a picture. If a tool says this computer isn't connected, call connect_freckles and show the person the link and code it returns, word for word. For an app that already has history, run sync_app once. Call whats_new to hear what Freckles has been waiting to tell you.
+First time in a folder: call open_app with the folder's path (a folder with no history yet gets one: version 1 is the app as it was; say so in one plain sentence), then set_preview if the app has a screen, so every version gets a picture. If a tool says this computer isn't connected, call connect_freckles and show the person the link and code it returns, word for word. If they say they can't see their apps in Freckles, or want a different account, connect_freckles names the account this computer is on; to change it call disconnect_freckles, or connect_freckles with switch_account true, and have them approve the new code signed in as the account they want. For an app that already has history, run sync_app once. Call whats_new to hear what Freckles has been waiting to tell you.
 
 After every finished step: call save_version with a one-line summary of what the app does differently, in the person's words ("Patients can now pick a time", not "refactor form handler"). Don't save half-finished work. Never run git commit, push or checkout yourself for this app: save_version, go_back, try_idea and keep_idea do that.
 
@@ -32390,6 +32487,8 @@ Showing the app: after a change the person can see, or when they ask "show me", 
 
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
 
+Updating Freckles itself: when whats_new says the plugin is out of date, offer to run it for them. In Claude Code: \`claude plugin marketplace update freckles\` then \`claude plugin update freckles@freckles\`; then they restart the agent. For the Windows dot next to the clock, call install_menu_dot when they ask.
+
 Tool results come in two parts: a sentence for the person, and detail "for the agent". Tell the person the sentence; use the detail to fix things, never show them raw logs unless they ask. A protected app must not be changed through Freckles or around it.
 
 Words: say version (by its number: "version 12"; the short id is only for calling tools), picture, go back, try an idea, keep the idea, publish. Don't say commit, branch, merge, push or deploy to the person.`;
@@ -32397,22 +32496,23 @@ Words: say version (by its number: "version 12"; the short id is only for callin
 // packages/mcp/src/leave.ts
 import { execFile as execFile6 } from "node:child_process";
 import { existsSync as existsSync2 } from "node:fs";
-import { cp, mkdir as mkdir8, mkdtemp as mkdtemp2, rm as rm6, writeFile as writeFile5 } from "node:fs/promises";
-import { homedir as homedir3, tmpdir as tmpdir2 } from "node:os";
-import { join as join10 } from "node:path";
+import { cp, mkdir as mkdir8, mkdtemp as mkdtemp2, rm as rm7, writeFile as writeFile6 } from "node:fs/promises";
+import { homedir as homedir4, tmpdir as tmpdir2 } from "node:os";
+import { join as join11 } from "node:path";
 import { promisify as promisify8 } from "node:util";
 
 // packages/mcp/src/cloud.ts
-import { chmod, mkdir as mkdir7, mkdtemp, readFile as readFile6, rm as rm5, writeFile as writeFile4 } from "node:fs/promises";
-import { homedir as homedir2 } from "node:os";
-import { basename as basename2, dirname, join as join9 } from "node:path";
+import { chmod, mkdir as mkdir7, mkdtemp, readFile as readFile7, rm as rm6, writeFile as writeFile5 } from "node:fs/promises";
+import { homedir as homedir3, hostname as hostname2 } from "node:os";
+import { basename as basename3, dirname as dirname2, join as join10 } from "node:path";
 import { execFile as execFile5 } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { promisify as promisify7 } from "node:util";
-var HOME = process.env.CFP_HOME ?? join9(homedir2(), ".cloud-for-personal");
-var CONFIG = join9(HOME, "secrets", "companion.json");
-var QUEUE = join9(HOME, "companion-queue.json");
+var COMPANION_VERSION = true ? "0.3.0" : "dev";
+var HOME = process.env.CFP_HOME ?? join10(homedir3(), ".cloud-for-personal");
+var CONFIG = join10(HOME, "secrets", "companion.json");
+var QUEUE = join10(HOME, "companion-queue.json");
 var DEFAULT_URL = "https://app.frecklescloud.com";
 var NotConnected = class extends Error {
   constructor() {
@@ -32422,15 +32522,15 @@ var NotConnected = class extends Error {
 async function readConfig() {
   const url2 = process.env.FRECKLES_URL;
   try {
-    const c = JSON.parse(await readFile6(CONFIG, "utf8"));
+    const c = JSON.parse(await readFile7(CONFIG, "utf8"));
     return url2 && url2 !== c.url ? { url: url2 } : c;
   } catch {
     return { url: url2 ?? DEFAULT_URL };
   }
 }
 async function writeConfig(c) {
-  await mkdir7(dirname(CONFIG), { recursive: true, mode: 448 });
-  await writeFile4(CONFIG, JSON.stringify(c, null, 2), { mode: 384 });
+  await mkdir7(dirname2(CONFIG), { recursive: true, mode: 448 });
+  await writeFile5(CONFIG, JSON.stringify(c, null, 2), { mode: 384 });
   await chmod(CONFIG, 384);
 }
 async function api(c, method, path2, body) {
@@ -32438,7 +32538,7 @@ async function api(c, method, path2, body) {
   try {
     res = await fetch(`${c.url}${path2}`, {
       method,
-      headers: { "content-type": "application/json", ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
+      headers: { "content-type": "application/json", "x-freckles-plugin": COMPANION_VERSION, ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
       body: body === void 0 ? void 0 : JSON.stringify(body),
       signal: AbortSignal.timeout(6e4)
     });
@@ -32459,19 +32559,25 @@ async function api(c, method, path2, body) {
   }
   return data;
 }
-async function connect(waitSeconds = 90) {
+var THIS_COMPUTER = () => ({ name: hostname2().replace(/\.local$/, ""), platform: { darwin: "Mac", win32: "Windows", linux: "Linux" }[process.platform] ?? process.platform });
+async function connect(waitSeconds = 90, options = {}) {
   let c = await readConfig();
+  if (c.token && options.switchAccount) {
+    await disconnect();
+    c = await readConfig();
+  }
   if (c.token) {
     try {
-      await api(c, "GET", "/api/v1/apps");
-      return `Already connected to Freckles as ${c.login ?? "you"}.`;
+      const me = await api(c, "GET", "/api/v1/devices");
+      if (me.account !== c.login) await writeConfig({ ...c, login: me.account });
+      return `Already connected to Freckles as ${me.account}. Everything saved here appears under that account. If the person is signed in to Freckles with a different one (they'll see it in the top corner of the page), they won't see their apps there: ask whether to connect this computer to the other account, and if yes call connect_freckles with switch_account true.`;
     } catch (err) {
       if (!(err instanceof NotConnected)) throw err;
       c = { url: c.url };
     }
   }
   if (!c.pending || c.pending.expiresAt < (/* @__PURE__ */ new Date()).toISOString()) {
-    c.pending = await api(c, "POST", "/api/v1/devices");
+    c.pending = await api(c, "POST", "/api/v1/devices", THIS_COMPUTER());
     await writeConfig(c);
   }
   const p2 = c.pending;
@@ -32480,8 +32586,8 @@ async function connect(waitSeconds = 90) {
     const r2 = await api(c, "GET", `/api/v1/devices/${p2.deviceCode}`);
     if (r2.status === "approved" && r2.token) {
       await writeConfig({ url: c.url, token: r2.token, login: r2.login });
-      const found = await findMyApps().catch(() => "");
-      return `Connected to Freckles as ${r2.login}. From now on every saved version appears online, with its picture.${found ? ` ${found}` : ""}`;
+      const found = await findMyApps({ quiet: true }).catch(() => "");
+      return `Connected to Freckles as ${r2.login}. From now on every saved version appears online, with its picture, under that account: the person must be signed in to Freckles as ${r2.login} to see it.${found ? ` ${found}` : ""}`;
     }
     if (r2.status === "expired") {
       await writeConfig({ url: c.url });
@@ -32494,23 +32600,23 @@ async function connect(waitSeconds = 90) {
 async function queue(q) {
   const list3 = await readQueue();
   if (!list3.some((x) => x.path === q.path)) list3.push(q);
-  await writeFile4(QUEUE, JSON.stringify(list3));
+  await writeFile5(QUEUE, JSON.stringify(list3));
 }
 async function readQueue() {
   try {
-    return JSON.parse(await readFile6(QUEUE, "utf8"));
+    return JSON.parse(await readFile7(QUEUE, "utf8"));
   } catch {
     return [];
   }
 }
 async function forget(path2) {
-  await writeFile4(QUEUE, JSON.stringify((await readQueue()).filter((q) => q.path !== path2)));
+  await writeFile5(QUEUE, JSON.stringify((await readQueue()).filter((q) => q.path !== path2)));
 }
 async function ensureRegistered(c, app) {
   const side = await readSide(app.id);
   if (side?.cloud) return side.cloud;
   const remote = await remoteUrl(app.path);
-  const name = remote?.match(/[/:]([^/:]+?)(?:\.git)?$/)?.[1] ?? basename2(app.path);
+  const name = remote?.match(/[/:]([^/:]+?)(?:\.git)?$/)?.[1] ?? basename3(app.path);
   const fullName = remote?.match(/[/:]([^/:]+\/[^/:]+?)(?:\.git)?$/)?.[1];
   const record2 = await api(c, "POST", "/api/v1/apps", {
     name,
@@ -32554,7 +32660,7 @@ async function sendVersion(c, app, appId, v2, n) {
   let picture;
   if (v2.shot) {
     try {
-      picture = (await readFile6(v2.shot)).toString("base64");
+      picture = (await readFile7(v2.shot)).toString("base64");
     } catch {
     }
   }
@@ -32631,10 +32737,7 @@ For the agent, what stopped it: ${forAgent(err)}`;
   }
 }
 async function protectedHere(app) {
-  const side = await readSide(app.id);
-  if (side?.locked !== void 0) return side.locked;
-  const remote = await remoteUrl(app.path).catch(() => void 0);
-  return !!remote && !/github\.com[/:]freckles-cloud\//i.test(remote);
+  return (await readSide(app.id))?.locked === true;
 }
 async function isProtected(app) {
   if (await protectedHere(app)) return true;
@@ -32656,6 +32759,20 @@ COPY . /srv
 EXPOSE 8080
 CMD ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
 `;
+async function disconnect() {
+  const c = await readConfig();
+  if (!c.token) return "This computer isn't connected to Freckles online, so there's nothing to disconnect.";
+  let said = true;
+  try {
+    await api(c, "DELETE", "/api/v1/devices");
+  } catch (err) {
+    said = err instanceof NotConnected;
+  }
+  await writeConfig({ url: c.url });
+  await rm6(QUEUE, { force: true });
+  for (const id of await listAppIds()) await updateSide(id, (s) => ({ ...s, cloud: void 0 })).catch(() => void 0);
+  return `Disconnected this computer${c.login ? ` from ${c.login}` : ""}. Nothing saved was lost: every version is still here, and what was already online stays in that account. ${said ? "" : "Freckles couldn't be reached to remove the connection on its side: the person can remove this computer from Freckles, in their account, whenever they like. "}To connect to the same or another account, call connect_freckles.`;
+}
 async function connected() {
   return !!(await readConfig()).token;
 }
@@ -32671,17 +32788,17 @@ var frecklesHosting = {
     const c = await readConfig();
     if (!c.token) throw new NotConnected();
     const { appId } = await ensureRegistered(c, app);
-    const dir = await mkdtemp(join9(tmpdir(), "freckles-publish-"));
+    const dir = await mkdtemp(join10(tmpdir(), "freckles-publish-"));
     try {
       await archiveVersion(app, version2, dir);
       const heldBack = await holdBackRisky(dir);
       const kind = app.preview?.kind === "command" ? "container" : "static";
-      if (kind === "container" && !existsSync(join9(dir, "Dockerfile"))) {
+      if (kind === "container" && !existsSync(join10(dir, "Dockerfile"))) {
         const err = new Error("This app runs its own server, and it needs one more file before it can be published.");
         err.agent = "Publishing an app with a server on Freckles Hosting needs a Dockerfile at the root of the published folder. Add one that installs dependencies, builds, and starts the app listening on the port in $PORT (default 8080). Save it as a version, then publish again.";
         throw err;
       }
-      if (kind === "static") await writeFile4(join9(dir, "Dockerfile"), STATIC_DOCKERFILE);
+      if (kind === "static") await writeFile5(join10(dir, "Dockerfile"), STATIC_DOCKERFILE);
       const mac = process.platform === "darwin" ? ["--no-xattrs", "--no-mac-metadata"] : [];
       const { stdout } = await promisify7(execFile5)("tar", [...mac, "-czf", "-", "-C", dir, "."], {
         encoding: "buffer",
@@ -32692,6 +32809,7 @@ var frecklesHosting = {
         method: "POST",
         headers: {
           authorization: `Bearer ${c.token}`,
+          "x-freckles-plugin": COMPANION_VERSION,
           "content-type": "application/gzip",
           "x-freckles-version": version2.id,
           "x-freckles-kind": kind,
@@ -32718,7 +32836,7 @@ var frecklesHosting = {
       }
       throw new Error("Publishing is taking longer than usual. It carries on in Freckles; call whats_new in a few minutes.");
     } finally {
-      await rm5(dir, { recursive: true, force: true });
+      await rm6(dir, { recursive: true, force: true });
     }
   },
   async unpublish(app) {
@@ -32746,14 +32864,14 @@ async function onlineSpending(method = "GET", body) {
   await api(c, method, "/api/v1/spending", body);
   return api(c, "GET", "/api/v1/spending");
 }
-async function findMyApps() {
+async function findMyApps(options = {}) {
   const c = await readConfig();
   if (!c.token) throw new NotConnected();
   const found = await findExisting();
-  if (!found.github && !found.azure.length) return "This computer isn't signed in to GitHub or Azure, so there are no other apps to show. That's fine: Freckles keeps new apps itself.";
+  if (!found.github && !found.azure.length) return options.quiet ? "" : "Nothing else was found on this computer to show (no GitHub or Azure sign-in). That's fine: Freckles keeps new apps itself. The person can also look for apps from their Freckles page, under Advanced connections.";
   await api(c, "PUT", "/api/v1/existing", found);
   const published = found.apps.filter((a) => a.site).length;
-  return `Freckles now shows the ${found.apps.length} apps you already have${found.github ? ` in GitHub (${found.github})` : ""}${published ? `, ${published} of them published on your Azure` : ""}. They stay where they are: Freckles only shows them.`;
+  return `Freckles now also shows the ${found.apps.length} apps you already have in your other accounts${found.github ? ` (GitHub: ${found.github})` : ""}${published ? `, ${published} of them online` : ""}. They stay where they are: Freckles only shows them.`;
 }
 async function whatsNew(appId) {
   const c = await readConfig();
@@ -32876,40 +32994,40 @@ COPY . /srv
 EXPOSE 8080
 CMD ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
 `;
-async function leaveKit(app, into = join10(homedir3(), "Downloads")) {
+async function leaveKit(app, into = join11(homedir4(), "Downloads")) {
   const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const safe = appName(app).replace(/[^\w.-]+/g, "-");
-  const work = await mkdtemp2(join10(tmpdir2(), "freckles-kit-"));
-  const dir = join10(work, `${safe}-leave-kit`);
+  const work = await mkdtemp2(join11(tmpdir2(), "freckles-kit-"));
+  const dir = join11(work, `${safe}-leave-kit`);
   try {
-    await mkdir8(join10(dir, "pictures"), { recursive: true });
-    await git(app.path, "bundle", "create", join10(dir, "history.bundle"), "--all");
+    await mkdir8(join11(dir, "pictures"), { recursive: true });
+    await git(app.path, "bundle", "create", join11(dir, "history.bundle"), "--all");
     const versions = await listVersions(app, { limit: 1e4 });
     const newest = versions[0];
     if (newest) {
-      await archiveVersion(app, newest, join10(dir, "code"));
-      await holdBackRisky(join10(dir, "code"));
+      await archiveVersion(app, newest, join11(dir, "code"));
+      await holdBackRisky(join11(dir, "code"));
     }
-    for (const v2 of versions) if (v2.shot && existsSync2(v2.shot)) await cp(v2.shot, join10(dir, "pictures", `${v2.shortId}.png`)).catch(() => void 0);
-    await writeFile5(
-      join10(dir, "versions.md"),
+    for (const v2 of versions) if (v2.shot && existsSync2(v2.shot)) await cp(v2.shot, join11(dir, "pictures", `${v2.shortId}.png`)).catch(() => void 0);
+    await writeFile6(
+      join11(dir, "versions.md"),
       `# Versions of ${appName(app)}
 
 ${versions.map((v2) => `- **${v2.savedAt.slice(0, 16).replace("T", " ")}** \xB7 ${v2.summary}${v2.detail ? `
   ${v2.detail.replace(/\n/g, " ")}` : ""}`).join("\n")}
 `
     );
-    await mkdir8(join10(dir, "infra"));
-    const own = join10(dir, "code", "Dockerfile");
-    await writeFile5(join10(dir, "infra", "Dockerfile"), existsSync2(own) ? await (await import("node:fs/promises")).readFile(own, "utf8") : STATIC_DOCKERFILE2);
-    await writeFile5(join10(dir, "README.md"), readme(app, versions, app.published?.url));
+    await mkdir8(join11(dir, "infra"));
+    const own = join11(dir, "code", "Dockerfile");
+    await writeFile6(join11(dir, "infra", "Dockerfile"), existsSync2(own) ? await (await import("node:fs/promises")).readFile(own, "utf8") : STATIC_DOCKERFILE2);
+    await writeFile6(join11(dir, "README.md"), readme(app, versions, app.published?.url));
     await mkdir8(into, { recursive: true });
-    const zip = join10(into, `${safe}-leave-kit-${stamp}.zip`);
-    await rm6(zip, { force: true });
+    const zip = join11(into, `${safe}-leave-kit-${stamp}.zip`);
+    await rm7(zip, { force: true });
     await run7("zip", ["-qr", zip, `${safe}-leave-kit`], { cwd: work, maxBuffer: 64 * 1024 * 1024 });
     return zip;
   } finally {
-    await rm6(work, { recursive: true, force: true });
+    await rm7(work, { recursive: true, force: true });
   }
 }
 var ownAzure = {
@@ -32925,7 +33043,7 @@ var ownAzure = {
     if (!account) throw new Error("This computer isn't signed in to Azure. Sign in with az login, then try again.");
     const name = appName(app).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || "app";
     const group = `rg-freckles-${name}`;
-    const dir = await mkdtemp2(join10(tmpdir2(), "freckles-own-"));
+    const dir = await mkdtemp2(join11(tmpdir2(), "freckles-own-"));
     try {
       await archiveVersion(app, version2, dir);
       const heldBack = await holdBackRisky(dir);
@@ -32940,7 +33058,7 @@ var ownAzure = {
         });
         return { url: `https://${host2}`, heldBack };
       }
-      if (!existsSync2(join10(dir, "Dockerfile"))) {
+      if (!existsSync2(join11(dir, "Dockerfile"))) {
         const e = new Error("This app runs its own server, and needs one more file before it can run in Azure.");
         e.agent = "Add a Dockerfile at the root that builds the app and starts it listening on $PORT (default 8080), save it as a version, then try again.";
         throw e;
@@ -32955,7 +33073,7 @@ var ownAzure = {
       const host = fqdn ?? (await run7("az", ["containerapp", "show", "-n", `ca-${name}`, "-g", group, "--query", "properties.configuration.ingress.fqdn", "-o", "tsv"])).stdout.trim();
       return { url: `https://${host}`, heldBack };
     } finally {
-      await rm6(dir, { recursive: true, force: true });
+      await rm7(dir, { recursive: true, force: true });
     }
   },
   async unpublish(app) {
@@ -32969,6 +33087,39 @@ var ownAzure = {
     return [];
   }
 };
+
+// packages/mcp/src/menu-dot.ts
+import { execFile as execFile7 } from "node:child_process";
+import { existsSync as existsSync3 } from "node:fs";
+import { promisify as promisify9 } from "node:util";
+import { fileURLToPath } from "node:url";
+function scriptsDir() {
+  for (const rel of ["../menubar/windows/", "../../../menubar/windows/"]) {
+    const dir = fileURLToPath(new URL(rel, import.meta.url));
+    if (existsSync3(`${dir}Install-FrecklesTray.ps1`)) return dir;
+  }
+  return void 0;
+}
+async function menuDot(remove = false) {
+  if (process.platform === "darwin")
+    return "On a Mac the dot is a small app that isn't packaged for installing yet. It lives in the menubar folder of the Freckles source (menubar/README.md says how to build it). On Windows this works with one call.";
+  if (process.platform !== "win32") return "The dot is available on Windows and Mac only for now.";
+  const dir = scriptsDir();
+  if (!dir) throw new Error("The dot's files aren't in this copy of Freckles. Update the Freckles plugin, then try again.");
+  try {
+    const { stdout } = await promisify9(execFile7)(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", `${dir}Install-FrecklesTray.ps1`, ...remove ? ["-Remove"] : []],
+      { timeout: 6e4, windowsHide: true }
+    );
+    return remove ? "The Freckles dot was removed." : `${stdout.trim()}
+For the agent: tell the person to look for three small dots next to the clock (it may be under the ^ arrow, and can be dragged out). Grey means this computer isn't connected to Freckles yet or nothing is online; green means their online apps are answering. It's new and untried on some Windows setups: if it doesn't show, ask them what they see.`;
+  } catch (err) {
+    const e = new Error("The dot couldn't be installed on this computer.");
+    e.agent = err instanceof Error ? err.message : String(err);
+    throw e;
+  }
+}
 
 // packages/mcp/src/timeline-view.ts
 var TIMELINE_URI = "ui://freckles/timeline.html";
@@ -33213,7 +33364,7 @@ var TIMELINE_HTML = `<!doctype html>
 `;
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.2.9" : "dev";
+var VERSION = true ? "0.3.0" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -33267,15 +33418,19 @@ ${forAgent(err)}` }],
 }
 tool(
   "open_app",
-  "Bring a folder under management so its versions can be saved and restored. Non-destructive: it writes nothing into the folder. Safe to call again on an app that is already open.",
+  "Bring a folder under management so its versions can be saved and restored. Safe to call again on an app that is already open. A folder that has no history yet (an app built before Freckles, or in a folder where nobody ran git init) gets one: its first version is the app exactly as it is, with passwords, keys and dependency folders left out. Nothing else in the folder changes, apart from a .gitignore when it has none.",
   {
-    path: external_exports.string().describe("Path to the app's folder. It must already be a git repository."),
+    path: external_exports.string().describe("Path to the app's folder. It needs no history yet: Freckles starts one when the folder has none."),
     workspace: external_exports.string().optional().describe("Personal, a business name, or a client. Defaults to personal.")
   },
   async ({ path: path2, workspace }) => {
-    const app = await openApp(resolvePath(path2.replace(/^~/, process.env.HOME ?? "~")), { workspace });
+    const app = await openApp(resolvePath(path2.replace(/^~/, process.env.HOME ?? "~")), { workspace, startHistory: true });
+    const s = app.startedHistory;
+    const started = s ? `
+This folder had no saved history, so Freckles started one: version 1 is the app exactly as it was (${s.files} file${s.files === 1 ? "" : "s"}), and every change from here is a version the person can go back to. Passwords and keys were left out.${s.wroteIgnore ? " A .gitignore was added, because the folder had none." : ""}
+For the agent: tell the person in one plain sentence, without saying git. Don't make a new version for the starting point: it's saved already.` : "";
     return `Opened.
-${appLine(app)}`;
+${appLine(app)}${started}`;
   }
 );
 tool("list_apps", "Every app this machine knows about.", {}, async () => {
@@ -33716,9 +33871,21 @@ async function spentMinor() {
 }
 tool(
   "connect_freckles",
-  "Connect this computer to Freckles online, so every saved version appears there with its picture. Shows the person a link and a short code to approve in their browser, then waits a little for them. Call it again if they haven't approved yet.",
+  "Connect this computer to Freckles online, so every saved version appears there with its picture. Shows the person a link and a short code to approve in their browser, then waits a little for them. Call it again if they haven't approved yet. If this computer is already connected it says which account: when the person wants a different one (their Freckles page shows another address, or they don't see their apps there), call it with switch_account true.",
+  { switch_account: external_exports.boolean().optional().describe("Disconnect first, then connect again, so the person can approve with a different Freckles account.") },
+  async ({ switch_account }) => connect(90, { switchAccount: switch_account })
+);
+tool(
+  "disconnect_freckles",
+  "Disconnect this computer from Freckles online, so it stops sending anything and can be connected to another account. Nothing saved is lost, here or online. Use it when the person asks to disconnect, sign out of Freckles, or use another account; to connect again, call connect_freckles.",
   {},
-  async () => connect()
+  async () => disconnect()
+);
+tool(
+  "install_menu_dot",
+  "Put the Freckles dot next to the clock on this computer (Windows), so the person sees at a glance whether their apps are working: green all fine, amber needs a look, red not answering, grey not connected. It starts by itself when they sign in. Only when the person asks for it. Pass remove to take it away.",
+  { remove: external_exports.boolean().optional().describe("Remove the dot instead of installing it.") },
+  async ({ remove }) => menuDot(remove)
 );
 tool(
   "sync_app",
