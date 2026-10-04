@@ -32301,6 +32301,106 @@ var run5 = promisify5(exec4);
 // packages/publish/src/inventory.ts
 import { execFile as execFile4 } from "node:child_process";
 import { promisify as promisify6 } from "node:util";
+
+// packages/publish/src/azure-arm.ts
+var ARM = "https://management.azure.com";
+function short(s) {
+  let h2 = 5381;
+  for (const ch of s.toLowerCase()) h2 = (h2 * 33 ^ ch.charCodeAt(0)) >>> 0;
+  return h2.toString(36).slice(0, 5);
+}
+var groupOf = (id) => id.match(/\/resourceGroups\/([^/]+)/i)?.[1] ?? "";
+var isFrecklesOwn = (name) => /^freckles\b/i.test(name);
+async function findAzureApps(token, fetchImpl = fetch) {
+  const get = async (path2) => {
+    try {
+      const res = await fetchImpl(path2.startsWith("http") ? path2 : `${ARM}${path2}`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" }, signal: AbortSignal.timeout(45e3) });
+      return res.ok ? await res.json() : void 0;
+    } catch {
+      return void 0;
+    }
+  };
+  const all = async (path2) => {
+    const out = [];
+    let next = path2;
+    for (let page = 0; next && page < 5; page++) {
+      const r2 = await get(next);
+      if (!r2) return page === 0 ? void 0 : out;
+      out.push(...r2.value ?? []);
+      next = r2.nextLink;
+    }
+    return out;
+  };
+  const subs = await all("/subscriptions?api-version=2022-12-01") ?? [];
+  const mine = subs.filter((s) => s.state === "Enabled" && !isFrecklesOwn(s.displayName)).slice(0, 20);
+  const apps = [];
+  let unreadable = 0;
+  await Promise.all(
+    mine.map(async (sub) => {
+      const base = `/subscriptions/${sub.subscriptionId}`;
+      const [sites, webs, containers, resources] = await Promise.all([
+        all(`${base}/providers/Microsoft.Web/staticSites?api-version=2022-03-01`),
+        all(`${base}/providers/Microsoft.Web/sites?api-version=2022-03-01`),
+        all(`${base}/providers/Microsoft.App/containerApps?api-version=2023-05-01`),
+        all(`${base}/resources?api-version=2021-04-01`)
+      ]);
+      if (!sites && !webs && !containers) {
+        unreadable++;
+        return;
+      }
+      const beside = /* @__PURE__ */ new Map();
+      for (const r2 of resources ?? []) {
+        if (r2.name.includes("/")) continue;
+        const g = groupOf(r2.id).toLowerCase();
+        beside.set(g, [...beside.get(g) ?? [], { name: r2.name, type: r2.type }]);
+      }
+      const found = [
+        ...(sites ?? []).map((r2) => ({
+          r: r2,
+          hosts: [...r2.properties?.customDomains ?? [], r2.properties?.defaultHostname].filter((h2) => !!h2),
+          fromRepo: !!r2.properties?.repositoryUrl,
+          repositoryUrl: r2.properties?.repositoryUrl
+        })),
+        // Web apps and function apps (slots are children, and carry a "/" in their name).
+        ...(webs ?? []).filter((r2) => !r2.name.includes("/")).map((r2) => ({
+          r: r2,
+          hosts: (r2.properties?.hostNames ?? [r2.properties?.defaultHostName]).filter((h2) => !!h2 && !/\.scm\./.test(h2)),
+          fromRepo: false
+        })),
+        ...(containers ?? []).map((r2) => ({
+          r: r2,
+          hosts: [...(r2.properties?.configuration?.ingress?.customDomains ?? []).map((d2) => d2.name), r2.properties?.configuration?.ingress?.fqdn].filter((h2) => !!h2),
+          fromRepo: false
+        }))
+      ];
+      for (const { r: r2, hosts, fromRepo, repositoryUrl } of found) {
+        if (!hosts.length) continue;
+        const group = groupOf(r2.id);
+        const others = (beside.get(group.toLowerCase()) ?? []).filter((x) => x.name !== r2.name && !/^microsoft\.(web\/serverfarms|app\/managedenvironments|operationalinsights|insights)/i.test(x.type));
+        apps.push({
+          key: `azure/${r2.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-")}-${short(`${sub.subscriptionId}/${group}/${r2.name}`)}`,
+          name: r2.name,
+          repositoryUrl,
+          site: {
+            host: hosts[0],
+            hosts,
+            plan: r2.sku?.name,
+            place: whereIs(r2.location),
+            subscription: sub.displayName,
+            group,
+            fromRepo,
+            linkedBy: "Found in your Microsoft account."
+          },
+          alongside: others.length ? others.map((x) => ({ kind: ALONGSIDE_KIND[x.type.toLowerCase()] ?? "other", name: x.name, type: x.type })) : void 0
+        });
+      }
+    })
+  );
+  apps.sort((a, b) => a.name.localeCompare(b.name));
+  return { subscriptions: mine.map((s) => s.displayName), apps, unreadable };
+}
+
+// packages/publish/src/inventory.ts
 var run6 = promisify6(execFile4);
 async function json2(cmd, args) {
   try {
@@ -32319,29 +32419,47 @@ var ALONGSIDE_KIND = {
   "microsoft.dbforpostgresql/flexibleservers": "information",
   "microsoft.documentdb/databaseaccounts": "information"
 };
-var isFrecklesOwn = (name) => /^freckles\b/i.test(name);
-async function findExisting() {
-  const [repos, who] = await Promise.all([
+var isFrecklesOwn2 = (name) => /^freckles\b/i.test(name);
+var plain = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+async function azureToken(tenant) {
+  try {
+    const { stdout } = await run6("az", ["account", "get-access-token", "--resource", "https://management.azure.com/", ...tenant ? ["--tenant", tenant] : [], "--query", "accessToken", "-o", "tsv"], {
+      timeout: 3e4
+    });
+    return stdout.trim() || void 0;
+  } catch {
+    return void 0;
+  }
+}
+async function readCloud(fetchImpl) {
+  if (process.env.CFP_AZURE === "off") return { subscriptions: [], apps: [], unreadable: 0 };
+  const accounts = (await json2("az", ["account", "list", "-o", "json"]) ?? []).filter((s) => s.state === "Enabled" && !isFrecklesOwn2(s.name));
+  const tenants = [...new Set(accounts.map((s) => s.tenantId ?? ""))];
+  const apps = [];
+  const seen = /* @__PURE__ */ new Set();
+  let unreadable = 0;
+  for (const tenant of tenants) {
+    const token = await azureToken(tenant || void 0);
+    if (!token) {
+      unreadable += accounts.filter((s) => (s.tenantId ?? "") === tenant).length;
+      continue;
+    }
+    const r2 = await findAzureApps(token, fetchImpl);
+    unreadable += r2.unreadable;
+    for (const a of r2.apps) {
+      const k2 = `${a.site?.subscription}/${a.site?.group}/${a.name}`.toLowerCase();
+      if (!seen.has(k2)) apps.push(a);
+      seen.add(k2);
+    }
+  }
+  return { subscriptions: accounts.map((s) => s.name), account: (accounts.find((s) => s.isDefault) ?? accounts[0])?.user?.name, apps, unreadable };
+}
+async function findExisting(fetchImpl) {
+  const [repos, who, cloud] = await Promise.all([
     json2("gh", ["repo", "list", "--limit", "200", "--json", "name,nameWithOwner,description,pushedAt,isPrivate,isArchived,isFork,url,primaryLanguage,defaultBranchRef"]),
-    json2("gh", ["api", "user"])
+    json2("gh", ["api", "user"]),
+    readCloud(fetchImpl)
   ]);
-  const subs = process.env.CFP_AZURE === "off" ? [] : (await json2("az", ["account", "list", "-o", "json"]) ?? []).filter((s) => s.state === "Enabled" && !isFrecklesOwn(s.name));
-  const sites = [];
-  const byGroup = /* @__PURE__ */ new Map();
-  await Promise.all(
-    subs.map(async (s) => {
-      const [found, resources] = await Promise.all([
-        json2("az", ["staticwebapp", "list", "--subscription", s.id, "-o", "json"]),
-        json2("az", ["resource", "list", "--subscription", s.id, "--query", "[].{name:name,type:type,group:resourceGroup}", "-o", "json"])
-      ]);
-      for (const site of found ?? []) sites.push({ ...site, subscription: s.name });
-      for (const r2 of resources ?? []) {
-        if (r2.name.includes("/")) continue;
-        const k2 = `${s.name}/${r2.group}`.toLowerCase();
-        byGroup.set(k2, [...byGroup.get(k2) ?? [], { name: r2.name, type: r2.type }]);
-      }
-    })
-  );
   const own = (repos ?? []).filter((r2) => !r2.isArchived && !r2.isFork);
   const apps = own.map((r2) => ({
     key: r2.nameWithOwner,
@@ -32356,37 +32474,33 @@ async function findExisting() {
       branch: r2.defaultBranchRef?.name ?? "main"
     }
   }));
-  for (const site of sites) {
-    let app = site.repositoryUrl ? apps.find((a) => a.repo.url.toLowerCase() === site.repositoryUrl.toLowerCase()) : void 0;
+  for (const { repositoryUrl, ...found } of cloud.apps) {
+    const site = found.site;
+    let app = repositoryUrl ? apps.find((a) => !a.site && a.repo?.url.toLowerCase() === repositoryUrl.toLowerCase()) : void 0;
     let linkedBy = "Azure records that this site is published from this repository.";
     if (!app) {
-      app = apps.find((a) => site.customDomains.some((d2) => d2.toLowerCase() === a.name.toLowerCase()));
-      linkedBy = `Guessed: the site's address (${site.customDomains[0]}) matches this repository's name. Azure doesn't record where it's published from.`;
+      app = apps.find((a) => !a.site && a.repo && site.hosts.some((h2) => h2.toLowerCase() === a.name.toLowerCase()));
+      linkedBy = `Guessed: the site's address (${site.host}) matches this repository's name. Azure doesn't record where it's published from.`;
     }
-    if (!app || app.site) continue;
-    const hosts = [...site.customDomains, site.defaultHostname];
-    app.site = {
-      host: hosts[0],
-      hosts,
-      plan: site.sku?.name,
-      place: whereIs(site.location),
-      subscription: site.subscription,
-      group: site.resourceGroup,
-      fromRepo: !!site.repositoryUrl,
-      linkedBy
-    };
-    const group = byGroup.get(`${site.subscription}/${site.resourceGroup}`.toLowerCase()) ?? [];
-    const others = group.filter((r2) => r2.name !== site.name);
-    if (others.length) app.alongside = others.map((r2) => ({ kind: ALONGSIDE_KIND[r2.type.toLowerCase()] ?? "other", name: r2.name, type: r2.type }));
+    if (!app) {
+      app = apps.find((a) => !a.site && a.repo && plain(a.name) === plain(found.name));
+      linkedBy = `Guessed: its name (${found.name}) matches this repository's name. Azure doesn't record where it's published from.`;
+    }
+    if (!app) {
+      apps.push(found);
+      continue;
+    }
+    app.site = { ...site, linkedBy: site.linkedBy === "Found in your Microsoft account." ? linkedBy : site.linkedBy };
+    if (found.alongside) app.alongside = found.alongside;
   }
-  const queue2 = [...apps];
+  const queue2 = apps.filter((a) => a.repo);
   await Promise.all(
     Array.from({ length: 5 }, async () => {
       for (let a = queue2.shift(); a; a = queue2.shift()) a.history = await recentChanges(a.repo.fullName, a.repo.branch);
     })
   );
-  apps.sort((a, b) => Number(!!b.site) - Number(!!a.site) || b.repo.pushedAt.localeCompare(a.repo.pushedAt));
-  return { github: who?.login, azure: subs.map((s) => s.name), apps };
+  apps.sort((a, b) => Number(!!b.site) - Number(!!a.site) || (b.repo?.pushedAt ?? "").localeCompare(a.repo?.pushedAt ?? ""));
+  return { github: who?.login, azure: cloud.subscriptions, azureAccount: cloud.account, unreadable: cloud.unreadable, apps };
 }
 function plainSummary(title) {
   const t = title.trim().replace(/^[a-z]+(\([^)]*\))?!?:\s*/i, "");
@@ -32612,7 +32726,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.3.1" : "dev";
+var COMPANION_VERSION = true ? "0.3.2" : "dev";
 var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
 var CONFIG = join11(HOME2, "secrets", "companion.json");
 var QUEUE = join11(HOME2, "companion-queue.json");
@@ -32973,8 +33087,21 @@ async function findMyApps(options = {}) {
   const found = await findExisting();
   if (!found.github && !found.azure.length) return options.quiet ? "" : "Nothing else was found on this computer to show (no GitHub or Azure sign-in). That's fine: Freckles keeps new apps itself. The person can also look for apps from their Freckles page, under Advanced connections.";
   await api(c, "PUT", "/api/v1/existing", found);
-  const published = found.apps.filter((a) => a.site).length;
-  return `Freckles now also shows the ${found.apps.length} apps you already have in your other accounts${found.github ? ` (GitHub: ${found.github})` : ""}${published ? `, ${published} of them online` : ""}. They stay where they are: Freckles only shows them.`;
+  return describeFound(found);
+}
+function describeFound(found) {
+  const online = found.apps.filter((a) => a.site);
+  const parts = online.reduce((n, a) => n + (a.alongside?.length ?? 0) + 1, 0);
+  const noHome = found.apps.filter((a) => a.repo && !a.site);
+  const lines = [
+    `Freckles now also shows the ${found.apps.length} ${found.apps.length === 1 ? "app" : "apps"} the person already has in their other accounts${found.github ? ` (GitHub: ${found.github})` : ""}${online.length ? `: ${online.length} running in their cloud account, with ${parts} ${parts === 1 ? "part" : "parts"} mapped` : ""}. They stay where they are: Freckles only shows them.`
+  ];
+  if (found.unreadable) lines.push(`${found.unreadable} of the cloud subscriptions this computer is signed in to couldn't be read, so apps in ${found.unreadable === 1 ? "it" : "them"} are missing.`);
+  if (noHome.length && !found.azure.length) lines.push(`No cloud account is signed in on this computer, so Freckles couldn't see where ${noHome.length === 1 ? `${noHome[0].name} runs` : "these apps run"}.`);
+  else if (noHome.length) lines.push(`${noHome.length === 1 ? `${noHome[0].name} wasn't found running` : `${noHome.length} apps weren't found running`} in the cloud account(s) this computer is signed in to (${found.azure.join(", ")}${found.azureAccount ? `, as ${found.azureAccount}` : ""}).`);
+  if (found.unreadable || noHome.length)
+    lines.push("Tell the person: if some of their apps run in a different account than the ones above, Freckles can map them more accurately once that connection is added, under Advanced connections in the menu on their Freckles page (or by signing in to that account on this computer and calling find_my_apps again).");
+  return lines.join(" ");
 }
 async function whatsNew(appId) {
   const c = await readConfig();
@@ -33434,7 +33561,7 @@ var TIMELINE_HTML = `<!doctype html>
 `;
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.3.1" : "dev";
+var VERSION = true ? "0.3.2" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
