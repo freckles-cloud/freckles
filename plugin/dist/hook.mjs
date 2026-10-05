@@ -192,7 +192,7 @@ var MAC_AGENT = join2(homedir2(), "Library", "LaunchAgents", "com.frecklescloud.
 var WIN_STARTUP = join2(process.env.APPDATA ?? "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Freckles Menu.lnk");
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.4.0" : "dev";
+var COMPANION_VERSION = true ? "0.5.0" : "dev";
 var HOME2 = process.env.CFP_HOME ?? join3(homedir3(), ".cloud-for-personal");
 var CONFIG = join3(HOME2, "secrets", "companion.json");
 var QUEUE = join3(HOME2, "companion-queue.json");

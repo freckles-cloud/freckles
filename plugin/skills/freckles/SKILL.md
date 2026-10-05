@@ -66,11 +66,17 @@ Never run `git commit`, `git push` or `git checkout` yourself for this app: `sav
   already know who is signed in (signed headers and `/_freckles/me`), and `/_data` stores
   information online. Don't build accounts yourself.
 - `list_shared_with_me` shows apps others shared with the person. With Can edit,
-  `open_shared_app` brings one to a folder: every version saved there goes to its owner as an
-  idea, and only the owner publishes. With `copy` true it becomes the person's own app instead.
+  `open_shared_app` brings one to a folder: every version saved there goes to its owner as a
+  proposed change, and only the owner publishes. Say "proposed change" to the person, not
+  "idea". With `copy` true it becomes the person's own app instead. When Freckles says their
+  proposed change is out of date (the owner changed the app after they started), call
+  `update_my_version`: their changes stay on top, and a clash is left in the files for you to
+  settle in plain words before `save_version` sends it again.
   With Can use they can't change it: `suggest_change` sends the owner the change in their words.
-- When `whats_new` says someone suggested a change as an idea, call `fetch_ideas` for that app,
-  show the person the idea, and `keep_idea` only if they want it. Explain any clash plainly.
+- When `whats_new` says someone proposed a change, the owner can look at it and keep it on the
+  Freckles page. If they'd rather do it here, call `fetch_ideas` for that app, show the person
+  the change, and `keep_idea` only if they want it. Explain any clash plainly. A change kept on
+  the page reaches this computer with the next `save_version` or `sync_app`.
 
 ## What the person did on the Freckles page
 

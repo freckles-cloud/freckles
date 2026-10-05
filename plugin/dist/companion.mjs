@@ -32601,7 +32601,7 @@ Showing the app: after a change the person can see, or when they ask "show me", 
 
 Sharing: when the person asks to share the app with someone or change who can open it, call share_app (people by email with "use" or "edit", or anyone at their company, anyone with the link, a word, nobody); who_can_open reads it back. If it asks you to confirm before opening the app to anyone with the link, ask the person first. Before writing any login, sign-up or user list, call use_sign_in: apps behind Freckles already know who is signed in, and /_data stores information online.
 
-Apps others shared: list_shared_with_me shows them. To work on one with Can edit, call open_shared_app with a folder: versions saved there go to its owner as an idea they can keep, and only the owner publishes; with copy true it becomes the person's own app. With Can use, they can't change it: send the owner the change with suggest_change. When whats_new says someone suggested a change as an idea, call fetch_ideas, show the person the idea, and keep_idea only if they want it.
+Apps others shared: list_shared_with_me shows them. To work on one with Can edit, call open_shared_app with a folder: versions saved there go to its owner as a proposed change they can keep (say "proposed change" to the person), and only the owner publishes; with copy true it becomes the person's own app. If their proposed change is out of date because the owner changed the app after they started, call update_my_version. With Can use, they can't change it: send the owner the change with suggest_change. When whats_new says someone proposed a change, the owner can keep it on the Freckles page; or call fetch_ideas, show the person the change, and keep_idea only if they want it.
 
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
 
@@ -32730,7 +32730,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.4.0" : "dev";
+var COMPANION_VERSION = true ? "0.5.0" : "dev";
 var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
 var CONFIG = join11(HOME2, "secrets", "companion.json");
 var QUEUE = join11(HOME2, "companion-queue.json");
@@ -32777,6 +32777,31 @@ async function api(c, method, path2, body) {
     const e = data;
     if (res.status === 401) throw new NotConnected();
     throw new Error(`${e?.error ?? `Freckles refused (${res.status})`}${e?.detail ? ` [${JSON.stringify(e.detail)}]` : ""}`);
+  }
+  return data;
+}
+async function upload(c, path2, bytes) {
+  let res;
+  try {
+    res = await fetch(`${c.url}${path2}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", "x-freckles-plugin": COMPANION_VERSION, ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
+      body: bytes,
+      signal: AbortSignal.timeout(12e4)
+    });
+  } catch (err) {
+    throw new Error(`Freckles online (${c.url}) couldn't be reached: ${err instanceof Error ? err.message : err}`);
+  }
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  if (!res.ok) {
+    if (res.status === 401) throw new NotConnected();
+    throw new Error(data?.error ?? `Freckles refused (${res.status})`);
   }
   return data;
 }
@@ -32872,9 +32897,32 @@ async function reportAzure(c, app, appId) {
   }
   await updateSide(app.id, (s) => ({ ...s, cloud: s.cloud && { ...s.cloud, azureAt: (/* @__PURE__ */ new Date()).toISOString() } }));
 }
+async function takeWhatWasKeptOnline(app, url2) {
+  const fetched = await git(app.path, "-c", "credential.helper=", "fetch", "--quiet", url2, "+refs/heads/main:refs/freckles/online-main").then(() => true, () => false);
+  if (!fetched) return;
+  const online2 = await git(app.path, "rev-parse", "--verify", "--quiet", "refs/freckles/online-main").catch(() => "");
+  if (!online2) return;
+  const has2 = (ancestor, of) => git(app.path, "merge-base", "--is-ancestor", ancestor, of).then(() => true, () => false);
+  if (await has2(online2, app.liveBranch)) return;
+  const here = await git(app.path, "rev-parse", app.liveBranch);
+  const current = await git(app.path, "rev-parse", "--abbrev-ref", "HEAD");
+  if (current === app.liveBranch) {
+    try {
+      await git(app.path, "merge", "--quiet", "--no-edit", online2);
+    } catch {
+      await git(app.path, "merge", "--abort").catch(() => void 0);
+      throw new Error("A change kept in Freckles online clashes with what was saved here since. Nothing was lost on either side; bring the two together before saving again.");
+    }
+  } else if (await has2(here, online2)) {
+    await git(app.path, "update-ref", `refs/heads/${app.liveBranch}`, online2, here);
+  } else {
+    throw new Error("A change kept in Freckles online and what was saved here have both moved on, and this folder is on another version. Go back to the live app, then save again.");
+  }
+}
 async function pushHistory(c, app, appId) {
   const { token, cloneUrl } = await api(c, "POST", `/api/v1/apps/${appId}/git-token`);
   const url2 = cloneUrl.replace("https://", `https://x-access-token:${token}@`);
+  await takeWhatWasKeptOnline(app, url2);
   await git(app.path, "-c", "credential.helper=", "push", url2, `${app.liveBranch}:refs/heads/main`);
 }
 async function sendVersion(c, app, appId, v2, n) {
@@ -33566,9 +33614,9 @@ var TIMELINE_HTML = `<!doctype html>
 
 // packages/mcp/src/shared.ts
 import { execFile as execFile8 } from "node:child_process";
-import { mkdtemp as mkdtemp3, readdir as readdir4, rm as rm9, stat as stat4 } from "node:fs/promises";
+import { mkdtemp as mkdtemp3, readdir as readdir4, readFile as readFile9, rm as rm9, stat as stat4 } from "node:fs/promises";
 import { tmpdir as tmpdir3 } from "node:os";
-import { join as join13, resolve as resolvePath } from "node:path";
+import { dirname as dirname3, join as join13, resolve as resolvePath } from "node:path";
 import { promisify as promisify10 } from "node:util";
 async function online() {
   const c = await readConfig();
@@ -33756,6 +33804,13 @@ async function onContributionIdea(app) {
   if (await git(app.path, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`).catch(() => "")) await git(app.path, "checkout", "--quiet", branch);
   else await git(app.path, "checkout", "--quiet", "-b", branch);
 }
+async function liveBase(app, branch) {
+  for (const ref of ["refs/freckles/live", "refs/remotes/origin/main", `refs/heads/${app.liveBranch}`]) {
+    const sha = await git(app.path, "rev-parse", "--verify", "--quiet", ref).catch(() => "");
+    if (sha) return await git(app.path, "merge-base", sha, branch).catch(() => "") || sha;
+  }
+  throw new Error("Couldn't tell which version of the app this was built on.");
+}
 async function sendContribution(app) {
   const k2 = await contributionOf(app);
   if (!k2) return "";
@@ -33764,16 +33819,56 @@ async function sendContribution(app) {
     const branch = await git(app.path, "rev-parse", "--abbrev-ref", "HEAD");
     if (!branch.startsWith("idea/")) return `Saved on this computer. It isn't on an idea, so ${k2.owner} wasn't sent anything.`;
     const idea = branch.slice("idea/".length).replace(/-/g, " ");
-    const key = await api(c, "POST", `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/git`);
-    await git(app.path, "-c", "credential.helper=", "push", "--quiet", withKey(key.cloneUrl, key.token), `${branch}:refs/heads/${branch}`);
+    const base = await liveBase(app, branch);
+    const file3 = join13(await mkdtemp3(join13(tmpdir3(), "freckles-send-")), "change.bundle");
+    try {
+      await git(app.path, "bundle", "create", file3, branch, `^${base}`);
+      await upload(c, `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/send`, await readFile9(file3));
+    } catch (err) {
+      if (/empty bundle/i.test(forAgent(err))) return `Nothing new to send to ${k2.owner}.`;
+      throw err;
+    } finally {
+      await rm9(dirname3(file3), { recursive: true, force: true });
+    }
     const [newest] = await listVersions(app, { limit: 1, branch });
-    await api(c, "POST", `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/idea`, { idea, summary: newest?.summary });
-    return `Sent to ${k2.owner} as the idea "${idea}". The live app is unchanged until they keep it.`;
+    let picture;
+    if (newest?.shot) picture = await readFile9(newest.shot).then((b) => b.toString("base64"), () => void 0);
+    await api(c, "POST", `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/idea`, {
+      idea,
+      summary: newest?.summary,
+      note: newest?.detail || void 0,
+      picture
+    });
+    return `Sent to ${k2.owner} as a proposed change, "${idea}". The live app is unchanged until they keep it.`;
   } catch (err) {
     if (err instanceof NotConnected) return `Saved on this computer. ${err.message}`;
     return `Saved on this computer. ${k2.owner} hasn't been sent it yet: call sync_app later to send it.
 For the agent, what stopped it: ${forAgent(err)}`;
   }
+}
+async function updateMyVersion(app) {
+  const k2 = await contributionOf(app);
+  if (!k2) throw new Error("This isn't someone else's app opened to change. Only a version you opened with open_shared_app can be brought up to date this way.");
+  const c = await online();
+  const branch = await git(app.path, "rev-parse", "--abbrev-ref", "HEAD");
+  if (!branch.startsWith("idea/")) throw new Error("Your changes aren't on your own version right now, so there's nothing to bring up to date.");
+  if ((await git(app.path, "status", "--porcelain")).trim()) return "You have changes that aren't saved yet. Save them first with save_version, then bring your version up to date.";
+  const key = await api(c, "POST", `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/git`);
+  await git(app.path, "-c", "credential.helper=", "fetch", "--quiet", withKey(key.cloneUrl, key.token), "+refs/heads/main:refs/freckles/live");
+  const live = await git(app.path, "rev-parse", "refs/freckles/live");
+  if (await git(app.path, "merge-base", "--is-ancestor", live, "HEAD").then(() => true, () => false)) return `Your version already has everything new in ${k2.owner}'s app.`;
+  try {
+    await git(app.path, "merge", "--quiet", "--no-edit", live);
+  } catch {
+    const clashing = (await git(app.path, "diff", "--name-only", "--diff-filter=U").catch(() => "")).split("\n").filter(Boolean);
+    return [
+      `${k2.owner}'s app changed in places you also changed${clashing.length ? `: ${clashing.join(", ")}` : ""}, so it needs a person's eye. Your changes are still safe.`,
+      "",
+      `For the agent: the clashes are marked in ${clashing.join(", ") || "the files"}. Settle each one so both people's intent survives (read both sides, don't just pick one), tell the person what you chose in plain words, then save_version: that sends the updated version to ${k2.owner} again.`
+    ].join("\n");
+  }
+  const sent = await sendContribution(app);
+  return `Your version now includes everything new in ${k2.owner}'s app, with your changes on top. ${sent}`;
 }
 async function fetchIdeas(app, options = {}) {
   const side = await readSide(app.id);
@@ -33904,7 +33999,7 @@ function signInGuide(stack) {
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.4.0" : "dev";
+var VERSION = true ? "0.5.0" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -34497,6 +34592,12 @@ tool(
     copy: external_exports.boolean().optional().describe("Make it the person's own app (their own versions and link) instead of suggesting changes to the owner's.")
   },
   async ({ app, folder, copy }) => openSharedApp(app, folder, copy === true)
+);
+tool(
+  "update_my_version",
+  "Bring the owner's latest into the version of a shared app this person is changing (opened with open_shared_app), when Freckles says their proposed change is out of date because the owner changed the app after they started. Their changes stay on top. If both changed the same thing, the clash is left in the files for you to settle, then save_version sends it again.",
+  { app: appRef },
+  async ({ app: ref }) => updateMyVersion(await resolveApp(ref))
 );
 tool(
   "suggest_change",
