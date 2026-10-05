@@ -27,9 +27,9 @@ var __commonJS = (cb, mod) => function __require2() {
     throw mod = 0, e;
   }
 };
-var __export = (target, all) => {
+var __export = (target2, all) => {
   for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
+    __defProp(target2, name, { get: all[name], enumerable: true });
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -39,12 +39,12 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+var __toESM = (mod, isNodeMode, target2) => (target2 = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
   // If the importer is in node compatibility mode or this is not an ESM
   // file that has been converted to a CommonJS file using a Babel-
   // compatible transform (i.e. "__esModule" has not been set), then set
   // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target2, "default", { value: mod, enumerable: true }) : target2,
   mod
 ));
 
@@ -241,8 +241,8 @@ function defineLazy(object3, key, getter) {
     configurable: true
   });
 }
-function assignProp(target, prop, value) {
-  Object.defineProperty(target, prop, {
+function assignProp(target2, prop, value) {
+  Object.defineProperty(target2, prop, {
     value,
     writable: true,
     enumerable: true,
@@ -328,35 +328,35 @@ function normalizeParams(_params) {
   return params;
 }
 function createTransparentProxy(getter) {
-  let target;
+  let target2;
   return new Proxy({}, {
     get(_2, prop, receiver) {
-      target ?? (target = getter());
-      return Reflect.get(target, prop, receiver);
+      target2 ?? (target2 = getter());
+      return Reflect.get(target2, prop, receiver);
     },
     set(_2, prop, value, receiver) {
-      target ?? (target = getter());
-      return Reflect.set(target, prop, value, receiver);
+      target2 ?? (target2 = getter());
+      return Reflect.set(target2, prop, value, receiver);
     },
     has(_2, prop) {
-      target ?? (target = getter());
-      return Reflect.has(target, prop);
+      target2 ?? (target2 = getter());
+      return Reflect.has(target2, prop);
     },
     deleteProperty(_2, prop) {
-      target ?? (target = getter());
-      return Reflect.deleteProperty(target, prop);
+      target2 ?? (target2 = getter());
+      return Reflect.deleteProperty(target2, prop);
     },
     ownKeys(_2) {
-      target ?? (target = getter());
-      return Reflect.ownKeys(target);
+      target2 ?? (target2 = getter());
+      return Reflect.ownKeys(target2);
     },
     getOwnPropertyDescriptor(_2, prop) {
-      target ?? (target = getter());
-      return Reflect.getOwnPropertyDescriptor(target, prop);
+      target2 ?? (target2 = getter());
+      return Reflect.getOwnPropertyDescriptor(target2, prop);
     },
     defineProperty(_2, prop, descriptor) {
-      target ?? (target = getter());
-      return Reflect.defineProperty(target, prop, descriptor);
+      target2 ?? (target2 = getter());
+      return Reflect.defineProperty(target2, prop, descriptor);
     }
   });
 }
@@ -10861,7 +10861,7 @@ var init_schemas2 = __esm({
       inst.default = (def2) => _default2(inst, def2);
       inst.prefault = (def2) => prefault(inst, def2);
       inst.catch = (params) => _catch2(inst, params);
-      inst.pipe = (target) => pipe(inst, target);
+      inst.pipe = (target2) => pipe(inst, target2);
       inst.readonly = () => readonly(inst);
       inst.describe = (description) => {
         const cl = inst.clone();
@@ -15499,57 +15499,57 @@ var require_fast_uri = __commonJS({
       return serialize(resolved, schemelessOptions);
     }
     function resolveComponent(base, relative2, options, skipNormalization) {
-      const target = {};
+      const target2 = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
         relative2 = parse3(serialize(relative2, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative2.scheme) {
-        target.scheme = relative2.scheme;
-        target.userinfo = relative2.userinfo;
-        target.host = relative2.host;
-        target.port = relative2.port;
-        target.path = removeDotSegments(relative2.path || "");
-        target.query = relative2.query;
+        target2.scheme = relative2.scheme;
+        target2.userinfo = relative2.userinfo;
+        target2.host = relative2.host;
+        target2.port = relative2.port;
+        target2.path = removeDotSegments(relative2.path || "");
+        target2.query = relative2.query;
       } else {
         if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
-          target.userinfo = relative2.userinfo;
-          target.host = relative2.host;
-          target.port = relative2.port;
-          target.path = removeDotSegments(relative2.path || "");
-          target.query = relative2.query;
+          target2.userinfo = relative2.userinfo;
+          target2.host = relative2.host;
+          target2.port = relative2.port;
+          target2.path = removeDotSegments(relative2.path || "");
+          target2.query = relative2.query;
         } else {
           if (!relative2.path) {
-            target.path = base.path;
+            target2.path = base.path;
             if (relative2.query !== void 0) {
-              target.query = relative2.query;
+              target2.query = relative2.query;
             } else {
-              target.query = base.query;
+              target2.query = base.query;
             }
           } else {
             if (relative2.path[0] === "/") {
-              target.path = removeDotSegments(relative2.path);
+              target2.path = removeDotSegments(relative2.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative2.path;
+                target2.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative2.path;
+                target2.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
+                target2.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
-              target.path = removeDotSegments(target.path);
+              target2.path = removeDotSegments(target2.path);
             }
-            target.query = relative2.query;
+            target2.query = relative2.query;
           }
-          target.userinfo = base.userinfo;
-          target.host = base.host;
-          target.port = base.port;
+          target2.userinfo = base.userinfo;
+          target2.host = base.host;
+          target2.port = base.port;
         }
-        target.scheme = base.scheme;
+        target2.scheme = base.scheme;
       }
-      target.fragment = relative2.fragment;
-      return target;
+      target2.fragment = relative2.fragment;
+      return target2;
     }
     function equal(uriA, uriB, options) {
       const normalizedA = normalizeComparableURI(uriA, options);
@@ -21836,8 +21836,8 @@ var ZodType = class {
       description
     });
   }
-  pipe(target) {
-    return ZodPipeline.create(this, target);
+  pipe(target2) {
+    return ZodPipeline.create(this, target2);
   }
   readonly() {
     return ZodReadonly.create(this);
@@ -30661,8 +30661,8 @@ var StdioServerTransport = class {
 };
 
 // packages/mcp/src/index.ts
-import { stat as stat4 } from "node:fs/promises";
-import { resolve as resolvePath } from "node:path";
+import { stat as stat5 } from "node:fs/promises";
+import { resolve as resolvePath2 } from "node:path";
 
 // packages/core/src/adopt.ts
 import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
@@ -30981,18 +30981,18 @@ async function getVersion(app, id) {
   return n ? { ...v2, n } : v2;
 }
 async function goBack(app, versionId) {
-  const target = await getVersion(app, versionId);
-  if (!target) throw new Error(`no version ${versionId}`);
+  const target2 = await getVersion(app, versionId);
+  if (!target2) throw new Error(`no version ${versionId}`);
   if (!await isClean(app.path)) {
     throw new Error("there are unsaved changes \u2014 save a version first, then go back");
   }
-  await git(app.path, "read-tree", "-u", "--reset", target.id);
+  await git(app.path, "read-tree", "-u", "--reset", target2.id);
   if (await isClean(app.path)) {
     throw new Error("the app already looks exactly like that version");
   }
-  const day = target.savedAt.slice(0, 10);
+  const day = target2.savedAt.slice(0, 10);
   return saveVersion(app, {
-    summary: `Went back to "${target.summary}"`,
+    summary: `Went back to "${target2.summary}"`,
     detail: `Restores the app exactly as it was on ${day}. Nothing was deleted \u2014 the versions in between are still in the timeline.`,
     all: true
   });
@@ -31250,12 +31250,12 @@ async function startStatic(preview, appPath2) {
   const server2 = createServer((req, res) => {
     void (async () => {
       const asked = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
-      const target = resolve3(root, `.${normalize(asked)}`);
-      if (target !== root && !target.startsWith(root + "/")) {
+      const target2 = resolve3(root, `.${normalize(asked)}`);
+      if (target2 !== root && !target2.startsWith(root + "/")) {
         res.writeHead(403).end("outside the app");
         return;
       }
-      const file3 = await resolveFile(target);
+      const file3 = await resolveFile(target2);
       if (!file3) {
         res.writeHead(404).end("not found");
         return;
@@ -31275,12 +31275,12 @@ async function startStatic(preview, appPath2) {
     stop: () => new Promise((ok) => server2.close(() => ok()))
   };
 }
-async function resolveFile(target) {
+async function resolveFile(target2) {
   try {
-    const info = await stat(target);
-    if (info.isFile()) return target;
+    const info = await stat(target2);
+    if (info.isFile()) return target2;
     if (info.isDirectory()) {
-      const index = join4(target, "index.html");
+      const index = join4(target2, "index.html");
       return (await stat(index)).isFile() ? index : void 0;
     }
   } catch {
@@ -32599,6 +32599,10 @@ Links into Freckles: after a save that changes something the person can see, aft
 
 Showing the app: after a change the person can see, or when they ask "show me", call show_timeline. Hosts that can draw it show a small timeline with pictures inside the chat; the others get a short table and the link. Show it as it is, with nothing before or after it unless something needs the person to decide.
 
+Sharing: when the person asks to share the app with someone or change who can open it, call share_app (people by email with "use" or "edit", or anyone at their company, anyone with the link, a word, nobody); who_can_open reads it back. If it asks you to confirm before opening the app to anyone with the link, ask the person first. Before writing any login, sign-up or user list, call use_sign_in: apps behind Freckles already know who is signed in, and /_data stores information online.
+
+Apps others shared: list_shared_with_me shows them. To work on one with Can edit, call open_shared_app with a folder: versions saved there go to its owner as an idea they can keep, and only the owner publishes; with copy true it becomes the person's own app. With Can use, they can't change it: send the owner the change with suggest_change. When whats_new says someone suggested a change as an idea, call fetch_ideas, show the person the idea, and keep_idea only if they want it.
+
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
 
 Updating Freckles itself: when whats_new says the plugin is out of date, offer to run it for them. In Claude Code: \`claude plugin marketplace update freckles\` then \`claude plugin update freckles@freckles\`; then they restart the agent. For the Windows dot next to the clock, call install_menu_dot when they ask.
@@ -32726,7 +32730,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.3.2" : "dev";
+var COMPANION_VERSION = true ? "0.4.0" : "dev";
 var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
 var CONFIG = join11(HOME2, "secrets", "companion.json");
 var QUEUE = join11(HOME2, "companion-queue.json");
@@ -32962,11 +32966,11 @@ async function isProtected(app) {
   const c = await readConfig();
   if (!c.token || !side?.cloud?.appId) return false;
   try {
-    const online = await Promise.race([
+    const online2 = await Promise.race([
       api(c, "GET", `/api/v1/apps/${side.cloud.appId}`),
       new Promise((_2, no) => setTimeout(() => no(new Error("slow")), 4e3))
     ]);
-    return online.locked;
+    return online2.locked;
   } catch {
     return false;
   }
@@ -33090,11 +33094,11 @@ async function findMyApps(options = {}) {
   return describeFound(found);
 }
 function describeFound(found) {
-  const online = found.apps.filter((a) => a.site);
-  const parts = online.reduce((n, a) => n + (a.alongside?.length ?? 0) + 1, 0);
+  const online2 = found.apps.filter((a) => a.site);
+  const parts = online2.reduce((n, a) => n + (a.alongside?.length ?? 0) + 1, 0);
   const noHome = found.apps.filter((a) => a.repo && !a.site);
   const lines = [
-    `Freckles now also shows the ${found.apps.length} ${found.apps.length === 1 ? "app" : "apps"} the person already has in their other accounts${found.github ? ` (GitHub: ${found.github})` : ""}${online.length ? `: ${online.length} running in their cloud account, with ${parts} ${parts === 1 ? "part" : "parts"} mapped` : ""}. They stay where they are: Freckles only shows them.`
+    `Freckles now also shows the ${found.apps.length} ${found.apps.length === 1 ? "app" : "apps"} the person already has in their other accounts${found.github ? ` (GitHub: ${found.github})` : ""}${online2.length ? `: ${online2.length} running in their cloud account, with ${parts} ${parts === 1 ? "part" : "parts"} mapped` : ""}. They stay where they are: Freckles only shows them.`
   ];
   if (found.unreadable) lines.push(`${found.unreadable} of the cloud subscriptions this computer is signed in to couldn't be read, so apps in ${found.unreadable === 1 ? "it" : "them"} are missing.`);
   if (noHome.length && !found.azure.length) lines.push(`No cloud account is signed in on this computer, so Freckles couldn't see where ${noHome.length === 1 ? `${noHome[0].name} runs` : "these apps run"}.`);
@@ -33560,8 +33564,347 @@ var TIMELINE_HTML = `<!doctype html>
 </html>
 `;
 
+// packages/mcp/src/shared.ts
+import { execFile as execFile8 } from "node:child_process";
+import { mkdtemp as mkdtemp3, readdir as readdir4, rm as rm9, stat as stat4 } from "node:fs/promises";
+import { tmpdir as tmpdir3 } from "node:os";
+import { join as join13, resolve as resolvePath } from "node:path";
+import { promisify as promisify10 } from "node:util";
+async function online() {
+  const c = await readConfig();
+  if (!c.token) throw new NotConnected();
+  return c;
+}
+var withKey = (cloneUrl, token) => cloneUrl.replace("https://", `https://x-access-token:${token}@`);
+async function ownOnline(app, what) {
+  const side = await readSide(app.id);
+  if (side?.contribution) {
+    const err = new Error(`${side.contribution.name} belongs to ${side.contribution.owner}: only its owner ${what}.`);
+    err.agent = `This app was opened with open_shared_app to work on someone else's app. Refused ${what}. Save changes with save_version: they go to the owner as an idea.`;
+    throw err;
+  }
+  const c = await online();
+  if (!side?.cloud?.appId) throw new Error("This app isn't in Freckles online yet. Save a version (or call sync_app) first, then try again.");
+  return { c, appId: side.cloud.appId };
+}
+function describeShare(v2, newly = []) {
+  const general = v2.general === "company" ? `${v2.generalLabel}${v2.domain ? ` (anyone signed in with an @${v2.domain} address)` : ""}${v2.generalRole === "edit" ? ", and they can edit it" : ""}` : v2.generalLabel;
+  const people = v2.people.length ? v2.people.map((p2) => `${p2.email} (${p2.roleLabel})`).join(", ") : "nobody named yet";
+  const lines = [`Who can open ${v2.app}: ${general}.`, `People added: ${people}.`];
+  if (!v2.chosen) lines.push("Nobody has chosen yet, so it's open to anyone with the link, as it always was.");
+  const agent = [
+    newly.length ? `Newly added: ${newly.join(", ")}. Freckles doesn't email them yet: give the person the app's link to send them.` : "",
+    v2.people.some((p2) => p2.role === "edit") ? "People with Can edit can work on it with their own agent (open_shared_app on their side); their changes reach this app as ideas, and you hear about them through whats_new." : "",
+    "The app's own address checks this list once Freckles puts its sign-in in front of the app (rolling out app by app); until then a published app still opens for anyone who has its link. If the person is sharing something private, say so plainly."
+  ].filter(Boolean);
+  return `${lines.join("\n")}
+
+For the agent: ${agent.join(" ")}`;
+}
+async function whoCanOpen(app) {
+  const { c, appId } = await ownOnline(app, "decides who can open it");
+  return describeShare(await api(c, "GET", `/api/v1/apps/${encodeURIComponent(appId)}/share`));
+}
+async function storesInformation(app, c, appId) {
+  if (await hasInformation(app)) return true;
+  try {
+    const d2 = await api(c, "GET", `/api/v1/apps/${encodeURIComponent(appId)}/data`);
+    return d2.collections.some((x) => x.records > 0);
+  } catch {
+    return false;
+  }
+}
+async function shareApp(app, change) {
+  const { c, appId } = await ownOnline(app, "decides who can open it");
+  if (change.general === "link" && !change.confirm && await storesInformation(app, c, appId)) {
+    return [
+      "Nothing changed yet. This app keeps information people typed in, and with \u201CAnyone with the link\u201D anybody who gets the link could see it and add to it.",
+      "",
+      'For the agent: ask the person whether that is really what they want, in those words. Only if they say yes, call share_app again with the same choices and confirm: true. Otherwise suggest "company" (anyone at their company) or adding people by email.'
+    ].join("\n");
+  }
+  const body = {
+    general: change.general,
+    generalRole: change.general_role,
+    word: change.word,
+    add: change.add?.map((p2) => ({ email: p2.email, role: p2.role ?? "use" })),
+    remove: change.remove
+  };
+  const v2 = await api(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/share`, body);
+  return describeShare(v2, v2.added ?? []);
+}
+async function sharedList(c) {
+  return api(c, "GET", "/api/v1/shared");
+}
+async function listSharedWithMe() {
+  const apps = await sharedList(await online());
+  if (!apps.length) return "Nobody has shared an app with this account yet. When someone does, it shows here, on the Freckles page, and in their email to you.";
+  const lines = apps.map((a) => `- ${a.name}, from ${a.owner}${a.via === "team" ? " (your team)" : ""}: ${a.roleLabel}${a.link ? `, ${a.link}` : ", not published yet"}`);
+  const refs = apps.map((a) => `${a.name}: app "${a.workspace}/${a.appId}"${a.role === "edit" ? a.ownHistory ? " (Can edit, but its owner keeps its history in their own place: open_shared_app will be refused)" : " (can be opened with open_shared_app)" : " (Can use: suggest_change, or open_shared_app with copy: true for an app of their own)"}`);
+  return `Shared with you:
+${lines.join("\n")}
+
+For the agent: to work on one with Can edit, call open_shared_app with app set to the value below and a folder; with copy: true it becomes the person's own app instead. Changes made without copy go to the owner as ideas and only the owner publishes.
+${refs.join("\n")}`;
+}
+async function findShared(c, ref) {
+  const r2 = ref.trim();
+  const direct = r2.match(/^([a-z0-9-]+)\/([0-9a-f]{40})$/i);
+  if (direct) return { workspace: direct[1], appId: direct[2] };
+  const apps = await sharedList(c);
+  const host = (u2) => {
+    try {
+      return new URL(u2.includes("://") ? u2 : `https://${u2}`).host.toLowerCase();
+    } catch {
+      return "";
+    }
+  };
+  const byLink = apps.find((a) => a.link && host(a.link) === host(r2));
+  const byName = apps.filter((a) => a.name.toLowerCase() === r2.toLowerCase());
+  const found = byLink ?? (byName.length === 1 ? byName[0] : void 0);
+  if (!found) throw new Error(byName.length > 1 ? `More than one app called ${r2} is shared with you. Call list_shared_with_me and use the one you want.` : `No app shared with you matches "${r2}". Call list_shared_with_me to see what's shared with you.`);
+  return { workspace: found.workspace, appId: found.appId };
+}
+async function isEmptyOrMissing(dir) {
+  try {
+    return (await readdir4(dir)).length === 0;
+  } catch {
+    return true;
+  }
+}
+async function exists2(path2) {
+  return stat4(path2).then(() => true, () => false);
+}
+async function target(folder, name) {
+  const base = resolvePath(folder.replace(/^~/, process.env.HOME ?? "~"));
+  if (await isEmptyOrMissing(base)) return base;
+  const inside = join13(base, name.replace(/[^\w.-]+/g, "-"));
+  if (await exists2(inside)) throw new Error(`There's already a folder called ${inside}. Choose another folder.`);
+  return inside;
+}
+var ideaFor = (you) => `from ${(you.split("@")[0] ?? you).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() || "a helper"}`;
+var branchFor = (idea) => `idea/${idea.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
+async function openSharedApp(ref, folder, copy) {
+  const c = await online();
+  const { workspace, appId } = await findShared(c, ref);
+  const key = await api(c, "POST", `/api/v1/shared/${encodeURIComponent(workspace)}/${encodeURIComponent(appId)}/git`, copy ? { copy: true } : void 0);
+  const dir = await target(folder, key.name);
+  if (copy) return makeCopy(key, dir);
+  await git(process.cwd(), "-c", "credential.helper=", "clone", "--quiet", withKey(key.cloneUrl, key.token), dir);
+  await git(dir, "remote", "set-url", "origin", key.cloneUrl);
+  const app = await openApp(dir);
+  const idea = ideaFor(key.you);
+  const branch = branchFor(idea);
+  await git(dir, "fetch", "--quiet", withKey(key.cloneUrl, key.token), `+refs/heads/${branch}:refs/heads/${branch}`).catch(() => void 0);
+  if (await git(dir, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`).catch(() => "")) await git(dir, "checkout", "--quiet", branch);
+  else await startIdea(app, idea);
+  await updateSide(app.id, (s) => ({ ...s, contribution: { workspace, appId, role: "edit", owner: key.owner, name: key.name, idea, you: key.you } }));
+  return [
+    `Opened ${key.name}, shared by ${key.owner}, in ${dir}.`,
+    `Every change you save goes to ${key.owner} as an idea called "${idea}". Their live app doesn't change until they keep it, and only they publish it.`,
+    "",
+    `For the agent: work in ${dir} as usual (set_preview if it has a screen). save_version saves on the idea "${idea}" and sends it to the owner, who hears about it through whats_new; never save on or publish the live app (publish is refused here). If the person wants an app of their own instead, call open_shared_app with copy: true in another folder.`
+  ].join("\n");
+}
+async function suggestChange(ref, text) {
+  const c = await online();
+  const { workspace, appId } = await findShared(c, ref);
+  await api(c, "POST", `/api/v1/shared/${encodeURIComponent(workspace)}/${encodeURIComponent(appId)}/request`, { text });
+  const app = (await sharedList(c).catch(() => [])).find((a) => a.workspace === workspace && a.appId === appId);
+  return `Sent to ${app?.owner ?? "its owner"}${app ? ` for ${app.name}` : ""}: "${text.trim()}". They'll see it in Freckles and decide.
+
+For the agent: nothing changed in the app. Their agent receives it through whats_new.`;
+}
+async function makeCopy(key, dir) {
+  const scratch = await mkdtemp3(join13(tmpdir3(), "freckles-copy-"));
+  try {
+    await git(scratch, "-c", "credential.helper=", "clone", "--quiet", "--depth", "1", withKey(key.cloneUrl, key.token), "app");
+    const from = await git(join13(scratch, "app"), "log", "-1", "--format=%s").catch(() => "");
+    await git(join13(scratch, "app"), "archive", "--format=tar", "-o", join13(scratch, "app.tar"), "HEAD");
+    await git(scratch, "init", "--quiet", "-b", "main", dir);
+    await promisify10(execFile8)("tar", ["-xf", join13(scratch, "app.tar"), "-C", dir]);
+    await git(dir, "add", "--all");
+    await git(dir, "commit", "--quiet", "-m", `Your own copy of ${key.name}, made from ${key.owner}'s app${from ? ` as it was ("${from}")` : ""}`);
+  } finally {
+    await rm9(scratch, { recursive: true, force: true });
+  }
+  const app = await openApp(dir);
+  const first = await git(dir, "rev-parse", "HEAD");
+  await updateSide(app.id, (s) => ({ ...s, versions: { ...s.versions, [first]: { ...s.versions[first], plain: true } } }));
+  return [
+    `Made your own copy of ${key.name} in ${dir}. It's your app now: version 1 is ${key.owner}'s app as it was, and nothing you change reaches theirs.`,
+    "",
+    "For the agent: this is an ordinary app of the person's own (it isn't connected to the original). set_preview if it has a screen, save_version after each step (that also puts it in their Freckles), and publish when they ask; it gets its own link."
+  ].join("\n");
+}
+async function contributionOf(app) {
+  return (await readSide(app.id))?.contribution;
+}
+async function refuseForContribution(app, what) {
+  const k2 = await contributionOf(app);
+  if (!k2) return;
+  const err = new Error(`Only ${k2.owner}, its owner, ${what} ${k2.name}. They'll see your idea "${k2.idea}" and can keep it.`);
+  err.agent = `This folder is ${k2.owner}'s app, opened with open_shared_app to suggest changes. Refused ${what}. Saves go to the owner as the idea "${k2.idea}" through save_version; if the person wants to publish their own version, call open_shared_app with copy: true in another folder.`;
+  throw err;
+}
+async function onContributionIdea(app) {
+  const k2 = await contributionOf(app);
+  if (!k2) return;
+  const current = await git(app.path, "rev-parse", "--abbrev-ref", "HEAD");
+  if (current !== app.liveBranch) return;
+  const branch = branchFor(k2.idea);
+  if (await git(app.path, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`).catch(() => "")) await git(app.path, "checkout", "--quiet", branch);
+  else await git(app.path, "checkout", "--quiet", "-b", branch);
+}
+async function sendContribution(app) {
+  const k2 = await contributionOf(app);
+  if (!k2) return "";
+  try {
+    const c = await online();
+    const branch = await git(app.path, "rev-parse", "--abbrev-ref", "HEAD");
+    if (!branch.startsWith("idea/")) return `Saved on this computer. It isn't on an idea, so ${k2.owner} wasn't sent anything.`;
+    const idea = branch.slice("idea/".length).replace(/-/g, " ");
+    const key = await api(c, "POST", `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/git`);
+    await git(app.path, "-c", "credential.helper=", "push", "--quiet", withKey(key.cloneUrl, key.token), `${branch}:refs/heads/${branch}`);
+    const [newest] = await listVersions(app, { limit: 1, branch });
+    await api(c, "POST", `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/idea`, { idea, summary: newest?.summary });
+    return `Sent to ${k2.owner} as the idea "${idea}". The live app is unchanged until they keep it.`;
+  } catch (err) {
+    if (err instanceof NotConnected) return `Saved on this computer. ${err.message}`;
+    return `Saved on this computer. ${k2.owner} hasn't been sent it yet: call sync_app later to send it.
+For the agent, what stopped it: ${forAgent(err)}`;
+  }
+}
+async function fetchIdeas(app, options = {}) {
+  const side = await readSide(app.id);
+  if (options.quiet && (side?.contribution || side?.cloud?.own || !side?.cloud?.appId)) return "";
+  if (side?.contribution) return `This is ${side.contribution.owner}'s app: they bring in ideas, not you.`;
+  if (side?.cloud?.own) return "This app's history lives in its own place, so ideas from other people arrive there, not through Freckles.";
+  const { c, appId } = await ownOnline(app, "brings in ideas");
+  const { token, cloneUrl } = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/git-token`);
+  await git(app.path, "-c", "credential.helper=", "fetch", "--quiet", "--prune", withKey(cloneUrl, token), "+refs/heads/idea/*:refs/freckles/ideas/*");
+  const fetched = (await git(app.path, "for-each-ref", "--format=%(refname) %(objectname)", "refs/freckles/ideas/")).split("\n").filter(Boolean);
+  const current = await git(app.path, "rev-parse", "--abbrev-ref", "HEAD");
+  const news = [], moved = [], apart = [];
+  for (const line of fetched) {
+    const [ref = "", sha = ""] = line.split(" ");
+    const slug = ref.slice("refs/freckles/ideas/".length);
+    const branch = `idea/${slug}`;
+    const name = slug.replace(/-/g, " ");
+    const here = await git(app.path, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`).catch(() => "");
+    if (!here) {
+      await git(app.path, "branch", branch, sha);
+      news.push(name);
+    } else if (here !== sha) {
+      const behind = await git(app.path, "merge-base", "--is-ancestor", here, sha).then(() => true, () => false);
+      if (!behind) {
+        apart.push(name);
+        continue;
+      }
+      if (current === branch) await git(app.path, "merge", "--ff-only", "--quiet", sha);
+      else await git(app.path, "update-ref", `refs/heads/${branch}`, sha, here);
+      moved.push(name);
+    }
+  }
+  if (!news.length && !moved.length && !apart.length) return options.quiet ? "" : "No new ideas from the people this app is shared with.";
+  const ideas = await listIdeas(app);
+  const ahead = (n) => ideas.find((i) => i.name === n)?.versionsAhead ?? 0;
+  const said = [
+    news.length ? `New ideas from people who can edit: ${news.map((n) => `"${n}" (${ahead(n)} version${ahead(n) === 1 ? "" : "s"})`).join(", ")}.` : "",
+    moved.length ? `Updated: ${moved.map((n) => `"${n}"`).join(", ")}.` : "",
+    apart.length ? `${apart.map((n) => `"${n}"`).join(", ")} changed both here and in Freckles, so it was left as it is here.` : ""
+  ].filter(Boolean);
+  return `${said.join(" ")}
+
+For the agent: show the person each idea (list_versions with idea: "<name>", version_files to read it). Keep one only when they want it, with keep_idea; if two ideas changed the same things, keep_idea stops and names them: resolve, save a version, keep again, and explain the clash in plain words. drop_idea walks away from one.`;
+}
+async function hostedData(app) {
+  if (app.published?.provider !== "freckles") return void 0;
+  const side = await readSide(app.id);
+  const c = await readConfig();
+  if (!c.token || !side?.cloud?.appId || side.contribution) return void 0;
+  return { c, appId: side.cloud.appId };
+}
+async function onlineInformation(where, which) {
+  const q = which ? `?collection=${encodeURIComponent(which)}` : "";
+  const d2 = await api(
+    where.c,
+    "GET",
+    `/api/v1/apps/${encodeURIComponent(where.appId)}/data${q}`
+  );
+  if (which) {
+    const rows = d2.records ?? [];
+    return rows.length ? `${which} online, newest first:
+${rows.map((r2) => `${r2.at.slice(0, 16).replace("T", " ")}${r2.by ? ` ${r2.by}` : ""}  ${JSON.stringify(r2.body)}`).join("\n")}` : `Nothing in ${which} online yet.`;
+  }
+  return d2.collections.length ? `It has remembered, online:
+${d2.collections.map((x) => `${x.name} \u2014 ${x.records} record${x.records === 1 ? "" : "s"}`).join("\n")}` : "Nothing stored online yet.";
+}
+function signInGuide(stack) {
+  const parts = {
+    static: [
+      "A page with no server of its own (fetch from the app's own pages):",
+      "```js",
+      'const me = await fetch("/_freckles/me").then((r) => (r.ok ? r.json() : null));',
+      '// me: { email, name, team, role }; role is "use", "edit" or "anonymous"',
+      'if (me?.email) document.querySelector("#hello").textContent = `Hello, ${me.name || me.email}`;',
+      'if (me?.role === "edit") document.querySelector("#admin").hidden = false;',
+      "// Stored information, online too: each record is stamped with who added it.",
+      'await fetch("/_data/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ day: "Mon" }) });',
+      'const { records } = await fetch("/_data/bookings").then((r) => r.json());',
+      "```"
+    ].join("\n"),
+    node: [
+      "Node / Express (check the signature, then trust the headers):",
+      "```js",
+      'import { createHmac, timingSafeEqual } from "node:crypto";',
+      "function whoIs(req) {",
+      '  const h = (n) => req.get(`x-freckles-${n}`) ?? "";',
+      '  const [app, team, user, role] = [h("app"), h("team"), h("user"), h("role")];',
+      '  const want = createHmac("sha256", process.env.FRECKLES_APP_SECRET ?? "").update(`${app}|${team}|${user}|${role}`).digest();',
+      '  const got = Buffer.from(h("signature"), "hex");',
+      "  if (!process.env.FRECKLES_APP_SECRET || got.length !== want.length || !timingSafeEqual(got, want)) return null;",
+      '  return { email: user || null, name: decodeURIComponent(h("name")), role, team };',
+      "}",
+      'app.get("/admin", (req, res) => (whoIs(req)?.role === "edit" ? res.send("\u2026") : res.status(403).send("Only people who can edit this app")));',
+      "```"
+    ].join("\n"),
+    python: [
+      "Python (Flask shown; any framework reads the same headers):",
+      "```python",
+      "import hashlib, hmac, os",
+      "from urllib.parse import unquote",
+      "def who_is(headers):",
+      '    h = lambda n: headers.get(f"x-freckles-{n}", "")',
+      '    msg = "|".join([h("app"), h("team"), h("user"), h("role")]).encode()',
+      '    secret = os.environ.get("FRECKLES_APP_SECRET", "").encode()',
+      '    if not secret or not hmac.compare_digest(hmac.new(secret, msg, hashlib.sha256).hexdigest(), h("signature")):',
+      "        return None",
+      '    return {"email": h("user") or None, "name": unquote(h("name")), "role": h("role"), "team": h("team")}',
+      "# in a view: me = who_is(request.headers)",
+      "```"
+    ].join("\n")
+  };
+  const chosen = stack ? [parts[stack]] : [parts.static, parts.node, parts.python];
+  return [
+    "Nothing was changed. Apps behind Freckles already know who is using them: people sign in with Freckles (Google or Microsoft) when the app is shared with them, so the app needs no login page and no list of users.",
+    "",
+    "For the agent: don't write login, sign-up, passwords or user tables for this app. Freckles adds these headers to every request it passes to the app:",
+    "- x-freckles-user: the person's email address (empty when nobody signed in)",
+    "- x-freckles-name: their name, URI-encoded (decodeURIComponent / unquote it)",
+    "- x-freckles-role: use, edit or anonymous (what they may do with this app; use it to show or hide editing)",
+    "- x-freckles-team: the workspace the app belongs to",
+    "- x-freckles-app: the app's id",
+    "- x-freckles-signature: HMAC-SHA256, in hex, of `${app}|${team}|${user}|${role}` (those four header values joined by |) with the secret in the environment variable FRECKLES_APP_SECRET. A server checks it before trusting the others.",
+    "From the app's own pages, GET /_freckles/me answers { email, name, team, role } for whoever is looking, so even a static page can greet people by name. /_data/<collection> stores information online (POST a JSON record, GET { records }), the same shape as on this computer; records are stamped with who added them, and only that person or someone who can edit may change them.",
+    "On this computer, and for an app whose address isn't behind Freckles' sign-in yet, the headers are absent: treat that as nobody signed in, and keep every page working. Choose who may open the app with share_app, not in code.",
+    "",
+    ...chosen
+  ].join("\n");
+}
+
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.3.2" : "dev";
+var VERSION = true ? "0.4.0" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -33569,7 +33912,7 @@ var server = new McpServer(
 var provider = new ThisComputer(process.env.CFP_ORIGIN ?? "http://localhost:4300");
 var appRef = external_exports.string().describe("The app: either the path to its folder, or the short id shown by list_apps.");
 async function resolveApp(ref) {
-  const path2 = resolvePath(ref.replace(/^~/, process.env.HOME ?? "~"));
+  const path2 = resolvePath2(ref.replace(/^~/, process.env.HOME ?? "~"));
   if (await isDirectory(path2)) return openApp(path2);
   const ids = await listAppIds();
   const matches = ids.filter((id) => id.startsWith(ref));
@@ -33590,7 +33933,7 @@ async function changeableApp(ref, what) {
 }
 async function isDirectory(path2) {
   try {
-    return (await stat4(path2)).isDirectory();
+    return (await stat5(path2)).isDirectory();
   } catch {
     return false;
   }
@@ -33621,7 +33964,7 @@ tool(
     workspace: external_exports.string().optional().describe("Personal, a business name, or a client. Defaults to personal.")
   },
   async ({ path: path2, workspace }) => {
-    const app = await openApp(resolvePath(path2.replace(/^~/, process.env.HOME ?? "~")), { workspace, startHistory: true });
+    const app = await openApp(resolvePath2(path2.replace(/^~/, process.env.HOME ?? "~")), { workspace, startHistory: true });
     const s = app.startedHistory;
     const started = s ? `
 This folder had no saved history, so Freckles started one: version 1 is the app exactly as it was (${s.files} file${s.files === 1 ? "" : "s"}), and every change from here is a version the person can go back to. Passwords and keys were left out.${s.wroteIgnore ? " A .gitignore was added, because the folder had none." : ""}
@@ -33649,13 +33992,13 @@ tool(
     path: external_exports.string().optional().describe('Which page to photograph. Defaults to "/".')
   },
   async ({ app: ref, kind, command, port, dir, path: path2, install: install2 }) => {
-    const target = await resolveApp(ref);
+    const target2 = await resolveApp(ref);
     if (kind === "command" && (!command || port === void 0)) {
       throw new Error('a "command" preview needs both a command and a port');
     }
     const preview = kind === "static" ? { kind, dir, path: path2 } : { kind, command, port, path: path2, install: install2 };
     return `Preview set.
-${appLine(await setPreview(target, preview))}`;
+${appLine(await setPreview(target2, preview))}`;
   }
 );
 tool(
@@ -33749,11 +34092,11 @@ function timelineText(status, versions) {
 async function monthLine() {
   const amount = (minor, currency) => `${{ EUR: "\u20AC", USD: "$", GBP: "\xA3" }[currency] ?? `${currency} `}${(minor / 100).toFixed(2).replace(/\.00$/, "")}`;
   try {
-    const online = await onlineSpending();
+    const online2 = await onlineSpending();
     let spent, limit, currency;
-    if (online) {
-      if (!online.known) return "";
-      [spent, limit, currency] = [online.spentMinor, online.limit?.amountMinor, online.limit?.currency ?? online.currency];
+    if (online2) {
+      if (!online2.known) return "";
+      [spent, limit, currency] = [online2.spentMinor, online2.limit?.amountMinor, online2.limit?.currency ?? online2.currency];
     } else {
       const local = await spentMinor();
       if (!local.known) return "";
@@ -33776,14 +34119,15 @@ tool(
   },
   async ({ app: ref, summary, detail, all }) => {
     const app = await changeableApp(ref, "save_version");
+    await onContributionIdea(app);
     const version2 = await saveVersion(app, { summary, detail, all: all ?? true });
     const shot = await capture(app, version2.id);
     await attachShot(app, version2.id, { path: shot.path, skipped: shot.skipped });
     const saved = await getVersion(app, version2.id);
-    const online = await sync(app);
+    const online2 = await contributionOf(app) ? await sendContribution(app) : await sync(app);
     return `Saved.
 ${versionDetail(saved ?? version2)}
-${online}`;
+${online2}`;
   }
 );
 tool(
@@ -33893,6 +34237,7 @@ tool(
   { app: appRef, name: external_exports.string().describe("The idea's name, from list_ideas.") },
   async ({ app: ref, name }) => {
     const app = await changeableApp(ref, "keep_idea");
+    await refuseForContribution(app, "keeps ideas in");
     const result = await keepIdea(app, name);
     if (result.kept) return `Kept "${name}". It is part of the live app now.`;
     return [
@@ -33920,6 +34265,7 @@ tool(
   },
   async ({ app: ref, version: version2 }) => {
     const app = await changeableApp(ref, "publish");
+    await refuseForContribution(app, "publishes");
     const where = app.published?.provider === "your-azure" ? ownAzure : await connected() ? frecklesHosting : provider;
     const check3 = where.supports(app);
     if (!check3.ok) throw new Error(check3.because);
@@ -33942,6 +34288,7 @@ tool(
   { app: appRef },
   async ({ app: ref }) => {
     const app = await changeableApp(ref, "unpublish");
+    await refuseForContribution(app, "takes down");
     if (!app.published) return "That app is not published, so there is nothing to take down.";
     await unpublish(app, app.published.provider === "freckles" ? frecklesHosting : app.published.provider === "your-azure" ? ownAzure : provider);
     return "Taken down. The link no longer works, and every version is still here.";
@@ -33967,25 +34314,29 @@ tool(
     "Once it exists, the published app can use it from its own pages with no configuration and no key:",
     "  POST /_data/<list>   with a JSON body \u2014 saves one record",
     "  GET  /_data/<list>   \u2014 returns { records: [{ id, at, body }] }, newest first",
-    "The list name is anything you choose, e.g. /_data/bookings. Warn the user that anyone who can open their app can add to it and read it back: there is no sign-in yet, which is fine for a booking form and wrong for anything private."
+    "The list name is anything you choose, e.g. /_data/bookings. Warn the user that anyone who can open their app can add to it and read it back: fine for a booking form, wrong for anything private unless the app is shared only with the right people (share_app).",
+    "On Freckles Hosting the same address works online, in Freckles' built-in store, and each record is stamped with who added it when they signed in (see use_sign_in)."
   ].join("\n"),
   { app: appRef },
   async ({ app: ref }) => {
     const app = await changeableApp(ref, "add_information");
-    if (await hasInformation(app)) return "It already has somewhere to remember things.";
+    const online2 = await hostedData(app) ? " Online, on Freckles Hosting, the app already has it: the same /_data addresses keep records in Freckles, stamped with who added them." : "";
+    if (await hasInformation(app)) return `It already has somewhere to remember things.${online2}`;
     await addInformation(app);
-    return "Done. Pages can now POST to /_data/<list> and GET it back. Anyone who can open the app can do both.";
+    return `Done. Pages can now POST to /_data/<list> and GET it back. Anyone who can open the app can do both.${online2}`;
   }
 );
 tool(
   "list_information",
-  "What the app has remembered so far, and a sample of the most recent records.",
+  "What the app has remembered so far, and a sample of the most recent records. For an app published on Freckles Hosting, this reads what people stored online.",
   {
     app: appRef,
     list: external_exports.string().optional().describe("One list to look inside, e.g. bookings.")
   },
   async ({ app: ref, list: which }) => {
     const app = await resolveApp(ref);
+    const hosted = await hostedData(app);
+    if (hosted) return onlineInformation(hosted, which);
     if (!await hasInformation(app)) return "This app has nowhere to remember things yet.";
     if (which) {
       const rows = await list(app, which, 20);
@@ -34025,10 +34376,10 @@ tool(
     notify: external_exports.array(external_exports.string()).optional().describe("Email addresses to warn. Leave out to warn on screen only.")
   },
   async ({ amount, currency, notify }) => {
-    const online = await onlineSpending("PUT", { amount, currency, notify });
-    if (online?.limit) {
-      const who2 = online.limit.notify.length ? `, and email ${online.limit.notify.join(" and ")}` : "";
-      return `Monthly limit set in Freckles. I'll warn at ${online.limit.warnAt.join("% and ")}%${who2}. ${limitStatus({ ...online.limit, setAt: "" }, online.spentMinor).sentence}`;
+    const online2 = await onlineSpending("PUT", { amount, currency, notify });
+    if (online2?.limit) {
+      const who2 = online2.limit.notify.length ? `, and email ${online2.limit.notify.join(" and ")}` : "";
+      return `Monthly limit set in Freckles. I'll warn at ${online2.limit.warnAt.join("% and ")}%${who2}. ${limitStatus({ ...online2.limit, setAt: "" }, online2.spentMinor).sentence}`;
     }
     const { limit } = await setSpendingLimit({ amount, currency, notify });
     const who = limit.notify.length ? `, and email ${limit.notify.join(" and ")}` : "";
@@ -34050,10 +34401,10 @@ tool(
   "How much has been spent this month, and how that compares with the monthly limit. Check this before suggesting anything that costs money.",
   {},
   async () => {
-    const online = await onlineSpending();
-    if (online) {
-      const limit2 = online.limit && { ...online.limit, setAt: "" };
-      return online.known ? limitStatus(limit2, online.spentMinor).sentence : `This month's spending isn't known yet. ${limit2 ? limitStatus(limit2, 0).sentence.split(".")[0] + "." : "No monthly limit set."}`;
+    const online2 = await onlineSpending();
+    if (online2) {
+      const limit2 = online2.limit && { ...online2.limit, setAt: "" };
+      return online2.known ? limitStatus(limit2, online2.spentMinor).sentence : `This month's spending isn't known yet. ${limit2 ? limitStatus(limit2, 0).sentence.split(".")[0] + "." : "No monthly limit set."}`;
     }
     const { limit } = await readWorkspace();
     const spent = await spentMinor();
@@ -34091,7 +34442,76 @@ tool(
     app: appRef,
     versions: external_exports.number().int().min(1).max(200).optional().describe("How many of the newest versions to send, with their pictures. Defaults to 20.")
   },
-  async ({ app: ref, versions }) => sync(await resolveApp(ref), { versions: versions ?? 20 })
+  async ({ app: ref, versions }) => {
+    const app = await resolveApp(ref);
+    if (await contributionOf(app)) return sendContribution(app);
+    const said = await sync(app, { versions: versions ?? 20 });
+    const ideas = await fetchIdeas(app, { quiet: true }).catch(() => "");
+    return ideas ? `${said}
+
+${ideas}` : said;
+  }
+);
+var person = external_exports.object({
+  email: external_exports.string().describe("Their email address, the one they sign in with (Google or Microsoft)."),
+  role: external_exports.enum(["use", "edit"]).optional().describe('"use" (Can use: open the app) or "edit" (Can edit: also change it with their own agent, as ideas the owner keeps). Defaults to "use".')
+});
+tool(
+  "share_app",
+  `Choose who can open the person's published app, like sharing a document: add people by email with Can use or Can edit, remove people, and choose who else can open it ("invited": only people added; "company": anyone at their company; "link": anyone with the link; "word": anyone who knows a word; "nobody": only them and their team). Only when the person asks to share or change who can open it. Before opening an app that stores information to anyone with the link, it asks you to check with the person first (confirm).`,
+  {
+    app: appRef,
+    add: external_exports.array(person).optional().describe("People to add, or whose role to change."),
+    remove: external_exports.array(external_exports.string()).optional().describe("Email addresses to take off."),
+    general: external_exports.enum(["invited", "company", "link", "word", "nobody"]).optional().describe("Who else can open it, beyond the people added."),
+    general_role: external_exports.enum(["use", "edit"]).optional().describe('For "company": whether everyone at the company can also edit. Anyone with the link can only ever use it.'),
+    word: external_exports.string().optional().describe('For "word": the word people will type.'),
+    confirm: external_exports.boolean().optional().describe("True only after the person agreed that anyone with the link may see and add to what the app stores.")
+  },
+  async ({ app: ref, ...change }) => shareApp(await changeableApp(ref, "share_app"), change)
+);
+tool(
+  "who_can_open",
+  "Who can open the person's app now: the people added with Can use or Can edit, and who else (their company, anyone with the link, a word, nobody). Read-only.",
+  { app: appRef },
+  async ({ app: ref }) => whoCanOpen(await resolveApp(ref))
+);
+tool(
+  "use_sign_in",
+  "Before writing any login, sign-up or user list for an app: apps behind Freckles already know who is using them. This explains how the app reads the signed-in person (email, name, Can use or Can edit) and stores information online, with short examples for a static page, Node and Python. Changes nothing.",
+  { stack: external_exports.enum(["static", "node", "python"]).optional().describe("Only the example for this kind of app. Defaults to all three.") },
+  async ({ stack }) => signInGuide(stack)
+);
+tool(
+  "list_shared_with_me",
+  "Apps other people shared with this person (and apps of teams they're in), with who shared each, whether they can use or edit it, and its link.",
+  {},
+  async () => listSharedWithMe()
+);
+tool(
+  "open_shared_app",
+  "Work on an app someone shared with this person with Can edit: brings it to a folder on this computer. Every version saved there goes to its owner as an idea they can keep; the live app never changes and only its owner publishes. With copy: true it becomes the person's own app instead, with no link back, which they publish themselves.",
+  {
+    app: external_exports.string().describe('The shared app: "workspace/id" from list_shared_with_me, its link, or its name.'),
+    folder: external_exports.string().describe("Where to put it on this computer. An empty or new folder is used as is; otherwise a folder named after the app is made inside it."),
+    copy: external_exports.boolean().optional().describe("Make it the person's own app (their own versions and link) instead of suggesting changes to the owner's.")
+  },
+  async ({ app, folder, copy }) => openSharedApp(app, folder, copy === true)
+);
+tool(
+  "suggest_change",
+  "Ask the owner of an app shared with this person for a change, in a sentence or two, without changing the app: for someone who can only use it, or who'd rather the owner did it. The owner's agent receives it.",
+  {
+    app: external_exports.string().describe('The shared app: "workspace/id" from list_shared_with_me, its link, or its name.'),
+    text: external_exports.string().describe(`The change, in the person's words, e.g. "Add our phone number to the bottom of the page".`)
+  },
+  async ({ app, text }) => suggestChange(app, text)
+);
+tool(
+  "fetch_ideas",
+  "Bring to this computer the ideas that people who can edit this app saved in Freckles, so list_ideas shows them and keep_idea can keep them. Call it when whats_new says someone suggested a change as an idea. sync_app does this too.",
+  { app: appRef },
+  async ({ app: ref }) => fetchIdeas(await resolveApp(ref))
 );
 tool(
   "find_my_apps",
@@ -34113,7 +34533,7 @@ tool(
   "Make a leave kit: one .zip on this computer with the app's whole history, its newest code, a picture of each version, the list of versions, how it runs online, and plain instructions. It works without Freckles. Use when the person wants a copy of everything, or is leaving.",
   { app: appRef, folder: external_exports.string().optional().describe("Where to put the .zip. Defaults to Downloads.") },
   async ({ app: ref, folder }) => {
-    const zip = await leaveKit(await resolveApp(ref), folder ? resolvePath(folder.replace(/^~/, process.env.HOME ?? "~")) : void 0);
+    const zip = await leaveKit(await resolveApp(ref), folder ? resolvePath2(folder.replace(/^~/, process.env.HOME ?? "~")) : void 0);
     return `Leave kit ready: ${zip}
 It has every version, the code, the pictures and instructions, and works without Freckles.`;
   }
@@ -34124,6 +34544,7 @@ tool(
   { app: appRef },
   async ({ app: ref }) => {
     const app = await changeableApp(ref, "move_to_my_azure");
+    await refuseForContribution(app, "moves");
     const check3 = ownAzure.supports(app);
     if (!check3.ok) throw new Error(check3.because);
     const chosen = await getVersion(app, app.published?.versionId ?? "HEAD");

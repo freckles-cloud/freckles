@@ -56,6 +56,22 @@ Never run `git commit`, `git push` or `git checkout` yourself for this app: `sav
   you go on to propose it.
 - After publishing, call `whats_new`: some problems only appear while the app is being built.
 
+## Sharing, and apps others shared
+
+- "Share it with Ana", "let my team edit it": `share_app` with people by email and "use" or
+  "edit", or who else can open it (anyone at their company, anyone with the link, a word,
+  nobody). `who_can_open` reads it back. If `share_app` asks you to confirm before opening an app
+  that stores information to anyone with the link, ask the person first, in plain words.
+- Before writing any login, sign-up or list of users, call `use_sign_in`: apps behind Freckles
+  already know who is signed in (signed headers and `/_freckles/me`), and `/_data` stores
+  information online. Don't build accounts yourself.
+- `list_shared_with_me` shows apps others shared with the person. With Can edit,
+  `open_shared_app` brings one to a folder: every version saved there goes to its owner as an
+  idea, and only the owner publishes. With `copy` true it becomes the person's own app instead.
+  With Can use they can't change it: `suggest_change` sends the owner the change in their words.
+- When `whats_new` says someone suggested a change as an idea, call `fetch_ideas` for that app,
+  show the person the idea, and `keep_idea` only if they want it. Explain any clash plainly.
+
 ## What the person did on the Freckles page
 
 - Things the person does on the Freckles page reach you through `whats_new`: a spending limit set
