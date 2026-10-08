@@ -32166,6 +32166,7 @@ function repoId(url2) {
   }
 }
 function asResources(solution, spend) {
+  const currency = spend ? [...spend.values()][0]?.currency : void 0;
   return solution.resources.map((r2) => {
     const known = KINDS[r2.type.toLowerCase()];
     const free = known?.kind === "pages" && solution.sku === "Free";
@@ -32176,9 +32177,9 @@ function asResources(solution, spend) {
       purpose: known?.what ?? `An Azure ${r2.type.split("/").pop()}.`,
       status: "running",
       size: solution.host && ["microsoft.web/staticsites", "microsoft.app/containerapps"].includes(r2.type.toLowerCase()) ? solution.host : whereIs(r2.location),
-      monthlyMinor: billed ? billed.minor : free ? 0 : void 0,
-      currency: billed?.currency ?? "GBP",
-      note: billed ? "What it has actually cost so far this month, from your bill." : free ? "On Azure's free plan, so it costs nothing until it outgrows it." : "In your Azure account. What it costs is not read yet.",
+      monthlyMinor: billed ? billed.minor : spend ? 0 : free ? 0 : void 0,
+      currency: billed?.currency ?? currency ?? "GBP",
+      note: billed ? "What it has actually cost so far this month, from your bill." : spend ? "Nothing billed for it so far this month, from your bill." : free ? "On Azure's free plan, so it costs nothing until it outgrows it." : "In your Azure account. What it costs is not read yet.",
       where: "Your Azure account"
     };
   });
@@ -32203,7 +32204,7 @@ function whereIs(location2) {
   return PLACES[location2.toLowerCase().replace(/\s+/g, "")] ?? `In Azure's ${location2} region`;
 }
 var spendCache;
-async function readSpend(subscription) {
+async function readBill(subscription) {
   if (spendCache && spendCache.subscription === subscription && Date.now() - spendCache.at < CACHE_MS) {
     return spendCache.byResource;
   }
@@ -32216,18 +32217,20 @@ async function readSpend(subscription) {
       grouping: [{ type: "Dimension", name: "ResourceId" }]
     }
   });
-  const byResource = /* @__PURE__ */ new Map();
+  let byResource;
   try {
     const { stdout } = await run4(
       `az rest --method post --url "https://management.azure.com/subscriptions/${subscription}/providers/Microsoft.CostManagement/query?api-version=2023-03-01" --headers "Content-Type=application/json" --body '${body}' -o json`,
       { timeout: 9e4, maxBuffer: 32 * 1024 * 1024 }
     );
     const parsed = JSON.parse(stdout);
+    const read = /* @__PURE__ */ new Map();
     for (const [cost, resourceId, currency] of parsed.properties?.rows ?? []) {
       const name = resourceId.split("/").pop()?.toLowerCase();
       if (!name) continue;
-      byResource.set(name, { minor: cost * 100, currency });
+      read.set(name, { minor: cost * 100, currency });
     }
+    byResource = read;
   } catch {
   }
   spendCache = { at: Date.now(), subscription, byResource };
@@ -32237,7 +32240,8 @@ async function workspaceSpend(apps) {
   const subscription = await currentSubscription();
   if (!subscription) return { minor: 0, known: false };
   try {
-    const [solutions, spend] = await Promise.all([readAzure(subscription), readSpend(subscription)]);
+    const [solutions, spend] = await Promise.all([readAzure(subscription), readBill(subscription)]);
+    if (!spend) return { minor: 0, known: false };
     let minor = 0;
     let currency;
     const counted = /* @__PURE__ */ new Set();
@@ -32730,7 +32734,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.5.0" : "dev";
+var COMPANION_VERSION = true ? "0.5.1" : "dev";
 var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
 var CONFIG = join11(HOME2, "secrets", "companion.json");
 var QUEUE = join11(HOME2, "companion-queue.json");
@@ -32889,9 +32893,10 @@ async function reportAzure(c, app, appId) {
   for (const sub of subs.filter((x) => x.state === "Enabled" && !/^freckles hosting/i.test(x.name))) {
     const found = solutionFor(app, remote, await readAzure(sub.id), names);
     if (!found) continue;
+    const bill = await readBill(sub.id);
     await api(c, "PUT", `/api/v1/apps/${appId}/azure`, {
       url: found.host ? `https://${found.host}` : void 0,
-      resources: asResources(found).map((r2) => ({ ...r2, where: `Your Azure (${sub.name})` }))
+      resources: asResources(found, bill).map((r2) => ({ ...r2, where: `Your Azure (${sub.name})` }))
     });
     break;
   }
@@ -33138,7 +33143,12 @@ async function findMyApps(options = {}) {
   if (!c.token) throw new NotConnected();
   const found = await findExisting();
   if (!found.github && !found.azure.length) return options.quiet ? "" : "Nothing else was found on this computer to show (no GitHub or Azure sign-in). That's fine: Freckles keeps new apps itself. The person can also look for apps from their Freckles page, under Advanced connections.";
-  await api(c, "PUT", "/api/v1/existing", found);
+  const sent = await api(c, "PUT", "/api/v1/existing", found);
+  if (sent?.githubOff) {
+    const sites = found.apps.filter((a) => a.site);
+    const rest = sites.length ? ` ${describeFound({ ...found, github: void 0, apps: sites.map(({ repo: _r, history: _h, ...a }) => a) })}` : "";
+    return `The person turned GitHub off in Freckles (Settings, Hosting), so their GitHub apps are not shown. Don't turn it back on for them: they can do it from that page.${rest}`;
+  }
   return describeFound(found);
 }
 function describeFound(found) {
@@ -33754,6 +33764,33 @@ async function openSharedApp(ref, folder, copy) {
     `For the agent: work in ${dir} as usual (set_preview if it has a screen). save_version saves on the idea "${idea}" and sends it to the owner, who hears about it through whats_new; never save on or publish the live app (publish is refused here). If the person wants an app of their own instead, call open_shared_app with copy: true in another folder.`
   ].join("\n");
 }
+async function bringInRepo(repo, folder) {
+  const c = await online();
+  const list3 = await api(c, "GET", "/api/v1/connected");
+  if (!list3.available) return "Giving Freckles access to a repository isn't set up on this copy of Freckles yet, so there is nothing to bring in. The apps in the person's own GitHub are still shown in their list.";
+  if (!repo) {
+    if (!list3.repos.length) return `The person hasn't given Freckles access to any repository yet. They do it on their Freckles page: Settings, Hosting, Advanced connections, "Give Freckles access to a repository". GitHub asks them which ones, and Freckles can then only read them.`;
+    const lines = list3.repos.map((r2) => `- ${r2.fullName}${r2.private ? " (private)" : ""}${r2.description ? `: ${r2.description}` : ""}`);
+    return `Repositories the person gave Freckles access to:
+${lines.join("\n")}
+
+For the agent: ask which one they want, and where on this computer to put it, then call bring_in_repo with both.`;
+  }
+  if (!folder) throw new Error("Say where on this computer to put it.");
+  const key = await api(c, "POST", "/api/v1/connected/git", { repo });
+  const dir = await target(folder, key.name);
+  await git(process.cwd(), "-c", "credential.helper=", "clone", "--quiet", withKey(key.cloneUrl, key.token), dir);
+  await git(dir, "remote", "rename", "origin", "upstream");
+  await git(dir, "remote", "set-url", "upstream", key.cloneUrl);
+  const app = await openApp(dir);
+  const saved = await sync(app, { versions: 1 });
+  return [
+    `Brought ${key.name} in to ${dir}. It's one of the person's apps now, with its whole history. Nothing in GitHub was changed, and Freckles can only read it.`,
+    saved,
+    "",
+    `For the agent: work in ${dir} as usual (set_preview if it has a screen, save_version after each step, publish when they ask). The original lives on as the folder's "upstream" and is never written to. Don't say git, clone or repository to the person: say "brought in" and "your app".`
+  ].join("\n");
+}
 async function suggestChange(ref, text) {
   const c = await online();
   const { workspace, appId } = await findShared(c, ref);
@@ -33999,7 +34036,7 @@ function signInGuide(stack) {
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.5.0" : "dev";
+var VERSION = true ? "0.5.1" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -34592,6 +34629,15 @@ tool(
     copy: external_exports.boolean().optional().describe("Make it the person's own app (their own versions and link) instead of suggesting changes to the owner's.")
   },
   async ({ app, folder, copy }) => openSharedApp(app, folder, copy === true)
+);
+tool(
+  "bring_in_repo",
+  "Bring in an app the person already has on GitHub and gave Freckles access to (Settings, Hosting, Advanced connections), so it works like any of their apps: versions with pictures, ideas, going back, publishing. Freckles can only read the original and never changes it. Called with no repo it lists what they gave access to; with a repo and a folder it brings that one in. Use it for someone who has never used GitHub or code tools and was handed a project, instead of asking them to download anything.",
+  {
+    repo: external_exports.string().optional().describe('The project as "owner/name", from the list this tool gives without it.'),
+    folder: external_exports.string().optional().describe("Where to put it on this computer. An empty or new folder is used as is; otherwise a folder named after the app is made inside it.")
+  },
+  async ({ repo, folder }) => bringInRepo(repo, folder)
 );
 tool(
   "update_my_version",

@@ -1,7 +1,7 @@
 {
   "name": "freckles",
   "displayName": "Freckles",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Every step your agent finishes becomes a version with a picture of your app, kept and published by Freckles.",
   "author": {
     "name": "Freckles",
