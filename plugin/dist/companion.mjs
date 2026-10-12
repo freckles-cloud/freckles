@@ -32734,7 +32734,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.5.1" : "dev";
+var COMPANION_VERSION = true ? "0.5.2" : "dev";
 var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
 var CONFIG = join11(HOME2, "secrets", "companion.json");
 var QUEUE = join11(HOME2, "companion-queue.json");
@@ -34034,9 +34034,24 @@ function signInGuide(stack) {
     ...chosen
   ].join("\n");
 }
+async function answerNote(app, input) {
+  const { c, appId } = await ownOnline(app, "answers notes left on it");
+  const base = `/api/v1/apps/${encodeURIComponent(appId)}/notes`;
+  let id = input.note_id;
+  if (!id) {
+    const open2 = await api(c, "GET", base);
+    if (!open2.length) return "No notes are waiting on this app.";
+    if (open2.length > 1)
+      return `Several notes are waiting. Call answer_note again with the note_id of the one you did:
+${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}: ${n.text}`).join("\n")}`;
+    id = open2[0].id;
+  }
+  const r2 = await api(c, "POST", `${base}/${encodeURIComponent(id)}`, { reply: input.reply, done: input.done });
+  return `${r2.replied ? "Your answer is on the note, where its writer will see it. " : ""}${r2.done ? "The note is marked done." : "The note is still open."}`;
+}
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.5.1" : "dev";
+var VERSION = true ? "0.5.2" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -34607,6 +34622,17 @@ tool(
   "Who can open the person's app now: the people added with Can use or Can edit, and who else (their company, anyone with the link, a word, nobody). Read-only.",
   { app: appRef },
   async ({ app: ref }) => whoCanOpen(await resolveApp(ref))
+);
+tool(
+  "answer_note",
+  "After you have done what someone asked in a note on the app's page (a change request or an idea), answer them and mark it done, so they see it on the page. Say in a sentence what you did, in plain words. Do this once the change is saved (and published, if it was published); never before the owner agreed. With no note_id it uses the only open note.",
+  {
+    app: appRef,
+    note_id: external_exports.string().optional().describe("The note's id, as given in the request. Leave out when only one note is waiting."),
+    reply: external_exports.string().optional().describe("What you did, for the person who wrote the note. A sentence or two, no jargon."),
+    done: external_exports.boolean().optional().describe("Mark it done. Defaults to true.")
+  },
+  async ({ app: ref, note_id, reply, done }) => answerNote(await resolveApp(ref), { note_id, reply, done })
 );
 tool(
   "use_sign_in",
