@@ -31176,8 +31176,8 @@ async function clearSpendingLimit(name = "personal") {
   return rest;
 }
 function format(minor, currency) {
-  const symbol2 = { EUR: "\u20AC", USD: "$", GBP: "\xA3" };
-  return `${symbol2[currency] ?? `${currency} `}${(minor / 100).toFixed(2)}`;
+  const symbol3 = { EUR: "\u20AC", USD: "$", GBP: "\xA3" };
+  return `${symbol3[currency] ?? `${currency} `}${(minor / 100).toFixed(2)}`;
 }
 function limitStatus(limit, spentMinor2) {
   if (!limit) {
@@ -31701,10 +31701,10 @@ var STATUS_LABEL = {
 };
 function money(minor, currency = "GBP") {
   if (minor === void 0) return "";
-  const symbol2 = currency === "GBP" ? "\xA3" : currency === "USD" ? "$" : currency === "EUR" ? "\u20AC" : "";
+  const symbol3 = currency === "GBP" ? "\xA3" : currency === "USD" ? "$" : currency === "EUR" ? "\u20AC" : "";
   if (minor === 0) return "Free";
-  if (minor < 1) return `under ${symbol2}0.01`;
-  return `${symbol2}${(minor / 100).toFixed(2)}`;
+  if (minor < 1) return `under ${symbol3}0.01`;
+  return `${symbol3}${(minor / 100).toFixed(2)}`;
 }
 
 // packages/publish/src/information.ts
@@ -32734,7 +32734,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.5.2" : "dev";
+var COMPANION_VERSION = true ? "0.6.0" : "dev";
 var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
 var CONFIG = join11(HOME2, "secrets", "companion.json");
 var QUEUE = join11(HOME2, "companion-queue.json");
@@ -33190,6 +33190,120 @@ async function setPaused(app, paused) {
   if (!appId) throw new Error("This app isn't in Freckles online yet, so it isn't hosted there and costs nothing to pause.");
   const r2 = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/${paused ? "pause" : "wake"}`);
   return paused ? `${r2.name} is paused: it isn't costing anything for running, and nothing is lost. Visitors can't use it until it's woken. Wake it (wake_app) before testing it, and only when the person agrees.` : `${r2.name} is awake again, exactly as it was left${r2.url ? `, at ${r2.url}` : ""}. The first visit may take a few seconds while it starts.`;
+}
+async function signedIn() {
+  const c = await readConfig();
+  if (!c.token) throw new Error("This computer isn't connected to Freckles online yet: call connect_freckles first.");
+  return c;
+}
+async function onlineId(app, what) {
+  const appId = (await readSide(app.id))?.cloud?.appId;
+  if (!appId) throw new Error(`This app isn't in Freckles online yet, so ${what}. Publish it first.`);
+  return appId;
+}
+async function myPlan() {
+  const c = await signedIn();
+  const p2 = await api(c, "GET", "/api/v1/plan");
+  const apps = p2.liveAppsAllowed === null ? "as many live apps as they like" : `up to ${p2.liveAppsAllowed} live app${p2.liveAppsAllowed === 1 ? "" : "s"}`;
+  const price = `$${(p2.priceMinor / 100).toFixed(0)} a month`;
+  switch (p2.standing) {
+    case "owner":
+      return "They run Freckles: everything is included.";
+    case "pro":
+      return `They're on Pro: ${apps}, their own addresses, and no fee on payments. Paid until ${p2.proRenewsAt?.slice(0, 10) ?? "the end of the month"}, then it renews. To change the card or cancel, call manage_billing.`;
+    case "trial":
+      return `They're in their free 30 days (${p2.trialDaysLeft} left): ${apps}. After that one app stays online and the others are paused, never deleted. Pro (${price}) keeps everything online.${p2.proOffered ? " Offer go_pro only if they ask or need it." : ""}`;
+    default:
+      return `They're on the free plan: ${apps}; the rest of their apps are paused, never deleted. Pro (${price}) puts them all online and adds their own addresses.${p2.proOffered ? " Offer go_pro only if they ask or hit this limit." : " Pro isn't open yet: say so if they ask."}`;
+  }
+}
+async function goPro() {
+  const c = await signedIn();
+  const { url: url2 } = await api(c, "POST", "/api/v1/billing/pro");
+  return `Give the person this link to start Pro, word for word: ${url2}
+It's $15 for the first month, paid now on Stripe's own page, then every month until they cancel. Freckles never sees their card. Nothing has been charged yet. Afterwards call my_plan to confirm.`;
+}
+async function manageBilling() {
+  const c = await signedIn();
+  const { url: url2 } = await api(c, "POST", "/api/v1/billing/manage");
+  return `Give the person this link, word for word: ${url2}
+On Stripe's page they can change their card, see invoices, or cancel Pro. If they cancel, Pro runs to the end of the month already paid for.`;
+}
+async function takePayments() {
+  const c = await signedIn();
+  const status = await api(c, "GET", "/api/v1/payments");
+  if (!status.offered) return "Taking payments isn't switched on in Freckles yet. Tell the person it's coming, and don't build payments some other way.";
+  if (status.connected) return `Payments are already connected: the person's own Stripe account receives the money. Use sell_on_page to make a payment link for something they sell. Freckles keeps ${status.feeBp / 100}% of each payment${status.feeBp ? " (it's free on Pro)" : ""}; Stripe's own fees are the person's, as for any Stripe account.`;
+  const { url: url2 } = await api(c, "POST", "/api/v1/payments/connect");
+  return `Give the person this link to connect their Stripe account, word for word: ${url2}
+Stripe asks for their details and bank account on its own page; Freckles never sees them. Money from their customers goes straight to them. Tell them it takes a few minutes, and call take_payments again afterwards to check it's ready.${status.account?.needs ? ` Stripe says: ${status.account.needs}` : ""}`;
+}
+var symbol2 = (cur) => SYMBOLS[cur.toUpperCase()] ?? `${cur.toUpperCase()} `;
+async function sellOnPage(app, sale) {
+  const c = await signedIn();
+  const appId = await onlineId(app, "customers have nowhere to come back to after paying");
+  const amountMinor = Math.round(sale.amount * 100);
+  const r2 = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/sell`, { name: sale.name, amountMinor, currency: sale.currency });
+  return [
+    `Payment page for ${sale.name} (${symbol2(sale.currency)}${(amountMinor / 100).toFixed(2)}): ${r2.url}`,
+    "Make the app's button or link go to that address. The customer pays on Stripe's page, the money goes to the person's own Stripe account, and they come back to the app afterwards.",
+    r2.feeMinor ? `Freckles keeps ${symbol2(sale.currency)}${(r2.feeMinor / 100).toFixed(2)} of each payment; it's free on Pro.` : "Freckles keeps nothing from these payments.",
+    "Each payment page is for this price: if the price changes, make a new one. Never put a card form in the app itself."
+  ].join("\n");
+}
+async function useMyDomain(app, host) {
+  const c = await signedIn();
+  const appId = await onlineId(app, "there's nothing for the address to open");
+  const r2 = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/domain`, { host });
+  const { cname, txt } = r2.records;
+  return [
+    `To use ${r2.host}, the person adds two records where they manage that domain (their registrar or DNS provider). Nothing has changed yet.`,
+    `1. ${r2.apex ? "An ALIAS or ANAME record (a CNAME isn't allowed on a bare domain; some providers call it a CNAME at the root)" : "A CNAME record"}: name "${cname.name}", value "${cname.value}".`,
+    `2. A TXT record: name "${txt.name}", value "${txt.value}". It proves the domain is theirs.`,
+    "Tell them it can take a few minutes, sometimes an hour, to spread. When they say they've added them, call check_my_domain."
+  ].join("\n");
+}
+async function checkMyDomain(app, host) {
+  const c = await signedIn();
+  const appId = await onlineId(app, "there's nothing for the address to open");
+  const r2 = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/domain/check`, { host });
+  return r2.ready ? `${host} now opens the app, with its own security certificate: ${r2.url}. The Freckles address keeps working too. Share the new one.` : `Not yet: ${r2.missing}. The records may still be spreading. Ask the person to check they match exactly, wait a few minutes, and call check_my_domain again. Don't change anything else.`;
+}
+async function quoteDomain(host) {
+  const c = await signedIn();
+  const q = await api(c, "POST", "/api/v1/domains/quote", { host });
+  if (!q.available) return `${q.host} is taken. Suggest a couple of similar names and quote those.`;
+  if (q.premium) return `${q.host} is a premium name, which can't be bought through Freckles. They can buy it at a registrar and connect it with use_my_domain.`;
+  return `${q.host} is available for ${symbol2("USD")}${(q.priceMinor / 100).toFixed(2)} for the first year (it normally renews around ${symbol2("USD")}${(q.renewalMinor / 100).toFixed(2)} a year). If they want it, call buy_domain with the owner's real details; they pay on Stripe's page and Freckles registers it in their name.`;
+}
+async function myDomains() {
+  const c = await signedIn();
+  const { domains } = await api(c, "GET", "/api/v1/domains");
+  if (!domains.length) return "They haven't bought a domain through Freckles. (Domains they connected themselves aren't listed: those are renewed where they were bought.)";
+  return [
+    "Domains bought through Freckles. None renews by itself: Freckles tells the person 30 and 7 days before, and they pay for a year on Stripe's page (renew_domain).",
+    ...domains.map((d2) => `- ${d2.host}: ${d2.status === "lapsed" ? "ended" : d2.endsAt ? `ends ${d2.endsAt.slice(0, 10)} (${d2.daysLeft} days)` : "end date unknown"}${d2.status === "needs-attention" ? " (a step after buying still needs finishing: see whats_new)" : ""}`)
+  ].join("\n");
+}
+async function renewDomain(host) {
+  const c = await signedIn();
+  const r2 = await api(c, "POST", "/api/v1/domains/renew", { host });
+  return [
+    `Give the person this link to renew ${r2.host} for one more year, word for word: ${r2.url}`,
+    `It's ${symbol2("USD")}${(r2.priceMinor / 100).toFixed(2)}, paid on Stripe's own page${r2.endsAt ? `; it currently ends ${r2.endsAt.slice(0, 10)}` : ""}. Nothing is renewed until the payment arrives; if the registrar refuses meanwhile, the payment is returned.`,
+    "It still won't renew by itself next year: they'll hear again 30 days before."
+  ].join("\n");
+}
+async function buyDomain(app, host, owner) {
+  const c = await signedIn();
+  const appId = await onlineId(app, "there's nothing for the address to open");
+  const r2 = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/domain/buy`, { host, contact: { state: "", ...owner } });
+  return [
+    `Give the person this link to pay for ${r2.host}, word for word: ${r2.url}`,
+    `It's ${symbol2("USD")}${(r2.priceMinor / 100).toFixed(2)} for the first year, paid on Stripe's own page. Nothing is bought until the payment arrives; if the name is taken meanwhile, the payment is returned.`,
+    `Once paid, Freckles registers it in the name and address they gave (${owner.firstName} ${owner.lastName}), points it at the app, and tells you (whats_new). Then call check_my_domain.`,
+    "It does not renew by itself yet: tell them the date you'll be given, so it doesn't lapse by surprise."
+  ].join("\n");
 }
 var SYMBOLS = { EUR: "\u20AC", USD: "$", GBP: "\xA3" };
 var moneyOf = (minor, c) => `${SYMBOLS[c] ?? `${c} `}${(minor / 100).toFixed(2)}`;
@@ -34051,7 +34165,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.5.2" : "dev";
+var VERSION = true ? "0.6.0" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -34752,6 +34866,91 @@ tool(
   "Wake an app the person paused, so it runs again exactly as it was left. Do it when they ask, or before testing or publishing a paused app, after telling them it will start costing again.",
   { app: appRef },
   async ({ app: ref }) => setPaused(await changeableApp(ref, "wake_app"), false)
+);
+tool(
+  "my_plan",
+  "Say where the person's plan stands: the free 30 days (and how many are left), the free plan, or Pro, with how many apps can be online. Call it when they ask about limits, price or why an app was paused, and before suggesting they pay for anything.",
+  {},
+  async () => myPlan()
+);
+tool(
+  "go_pro",
+  "Give the person the link to start Pro ($15 a month, paid upfront on Stripe's own page): all their apps online, their own addresses, no fee on payments. Only when they ask, or when they've run into the free limit and chosen to pay. Never start it for them.",
+  {},
+  async () => goPro()
+);
+tool(
+  "manage_billing",
+  "Give a Pro person the link to Stripe's page for changing their card, seeing invoices or cancelling.",
+  {},
+  async () => manageBilling()
+);
+tool(
+  "take_payments",
+  "Connect the person's Stripe account so their apps can take payments. Gives you the link for them to open (Stripe asks for their details on its own page, and the money from their customers goes straight to them), or says it's already ready. Use this, then sell_on_page, whenever an app needs to charge for something: never build a card form or hold payment details in the app. Free to use; Freckles keeps 2% of each payment on the free plans and nothing on Pro.",
+  {},
+  async () => takePayments()
+);
+tool(
+  "sell_on_page",
+  "Make a payment page for something the person sells on an app (a class, a booking, a product), and get the address to send customers to. The app must be online and payments connected (take_payments). Customers pay on Stripe's page, the money goes to the person's own Stripe account, and they come back to the app afterwards. One payment page is for one price.",
+  {
+    app: appRef,
+    name: external_exports.string().describe("What the customer is buying, as they should see it: 'Haircut', 'Spring workshop'."),
+    amount: external_exports.number().positive().describe("The price in whole units of the currency, e.g. 30 or 12.5."),
+    currency: external_exports.string().length(3).describe("Three letters, e.g. EUR, USD, GBP.")
+  },
+  async ({ app: ref, name, amount, currency }) => sellOnPage(await changeableApp(ref, "sell_on_page"), { name, amount, currency })
+);
+tool(
+  "use_my_domain",
+  "Make an app answer at an address the person already owns (like shop.example.com) instead of the Freckles one. Gives the two records the person adds where they manage that domain; nothing changes until they do, then call check_my_domain. Needs the paid plan. Never ask for their registrar password or log in for them.",
+  { app: appRef, address: external_exports.string().describe("The address, e.g. shop.example.com or example.com.") },
+  async ({ app: ref, address }) => useMyDomain(await changeableApp(ref, "use_my_domain"), address)
+);
+tool(
+  "buy_domain",
+  "Buy a domain for an app, in the person's own name. Gives the link where they pay by card on Stripe's page; nothing is registered until the payment arrives, and the payment is returned if the name can't be had. Ask the person for the owner's real details first: they are the registered owner's, kept private from the public lookup, and can't be invented. Quote it first (quote_domain) and tell them the price. Needs the paid plan.",
+  {
+    app: appRef,
+    address: external_exports.string().describe("The name to buy, e.g. shop.com."),
+    firstName: external_exports.string(),
+    lastName: external_exports.string(),
+    organization: external_exports.string().optional(),
+    address1: external_exports.string().describe("Street address of the owner."),
+    city: external_exports.string(),
+    state: external_exports.string().optional().describe("Province or state, if their country has one."),
+    postalCode: external_exports.string(),
+    country: external_exports.string().length(2).describe("Two letters, e.g. ES."),
+    phone: external_exports.string().describe("National number, digits only."),
+    phoneCountryCode: external_exports.string().describe("Calling code without the plus, e.g. 34."),
+    email: external_exports.string()
+  },
+  async ({ app: ref, address, ...owner }) => buyDomain(await changeableApp(ref, "buy_domain"), address, owner)
+);
+tool(
+  "my_domains",
+  "List the domains the person bought through Freckles, with when each ends. None renews by itself. Call it when they ask about their domains, or when whats_new says one is ending.",
+  {},
+  async () => myDomains()
+);
+tool(
+  "renew_domain",
+  "Give the person the link to pay for one more year of a domain they bought through Freckles. Only when they want to keep it (whats_new says when one is ending). Nothing is renewed until they have paid on Stripe's page.",
+  { address: external_exports.string().describe("The domain, e.g. shop.com.") },
+  async ({ address }) => renewDomain(address)
+);
+tool(
+  "check_my_domain",
+  "After the person has added the records from use_my_domain: check they're there and, if so, put the address live with its own security certificate. If not, it says what's missing; waiting a few minutes and trying again is usually the answer.",
+  { app: appRef, address: external_exports.string() },
+  async ({ app: ref, address }) => checkMyDomain(await changeableApp(ref, "check_my_domain"), address)
+);
+tool(
+  "quote_domain",
+  "Check whether a domain name is free to buy and what the first year costs. Only quotes: buy_domain does the buying, once the person has chosen. Needs the paid plan.",
+  { address: external_exports.string().describe("The name to check, e.g. shop.com.") },
+  async ({ address }) => quoteDomain(address)
 );
 async function findIdea(app, name) {
   const wanted = name.trim().toLowerCase();
