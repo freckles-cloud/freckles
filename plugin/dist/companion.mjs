@@ -28074,6 +28074,9 @@ var Protocol = class {
       this.setRequestHandler(GetTaskPayloadRequestSchema, async (request, extra) => {
         const handleTaskResult = async () => {
           const taskId = request.params.taskId;
+          if (!await this._taskStore.getTask(taskId, extra.sessionId)) {
+            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${taskId}`);
+          }
           if (this._taskMessageQueue) {
             let queuedMessage;
             while (queuedMessage = await this._taskMessageQueue.dequeue(taskId, extra.sessionId)) {
@@ -28104,12 +28107,12 @@ var Protocol = class {
             throw new McpError(ErrorCode.InvalidParams, `Task not found: ${taskId}`);
           }
           if (!isTerminal(task.status)) {
-            await this._waitForTaskUpdate(taskId, extra.signal);
+            await this._waitForTaskUpdate(taskId, extra.signal, extra.sessionId);
             return await handleTaskResult();
           }
           if (isTerminal(task.status)) {
             const result = await this._taskStore.getTaskResult(taskId, extra.sessionId);
-            this._clearTaskQueue(taskId);
+            this._clearTaskQueue(taskId, extra.sessionId);
             return {
               ...result,
               _meta: {
@@ -28146,7 +28149,7 @@ var Protocol = class {
             throw new McpError(ErrorCode.InvalidParams, `Cannot cancel task in terminal status: ${task.status}`);
           }
           await this._taskStore.updateTaskStatus(request.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
-          this._clearTaskQueue(request.params.taskId);
+          this._clearTaskQueue(request.params.taskId, extra.sessionId);
           const cancelledTask = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
           if (!cancelledTask) {
             throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request.params.taskId}`);
@@ -28274,6 +28277,19 @@ var Protocol = class {
     const handler = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
     const capturedTransport = this._transport;
     const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
+    const sessionId = capturedTransport?.sessionId;
+    const store = this._taskStore;
+    let relatedTaskFound = true;
+    let relatedTaskLookup;
+    if (relatedTaskId && store && this._taskMessageQueue && sessionId !== void 0) {
+      relatedTaskFound = false;
+      relatedTaskLookup = (async () => {
+        if (!await store.getTask(relatedTaskId, sessionId)) {
+          throw new McpError(ErrorCode.InvalidParams, `Task not found: ${relatedTaskId}`);
+        }
+        relatedTaskFound = true;
+      })();
+    }
     if (handler === void 0) {
       const errorResponse = {
         jsonrpc: "2.0",
@@ -28283,7 +28299,10 @@ var Protocol = class {
           message: "Method not found"
         }
       };
-      if (relatedTaskId && this._taskMessageQueue) {
+      if (relatedTaskId && relatedTaskLookup) {
+        const queuedError = { type: "error", message: errorResponse, timestamp: Date.now() };
+        relatedTaskLookup.then(() => this._enqueueTaskMessage(relatedTaskId, queuedError, sessionId), () => capturedTransport?.send(errorResponse)).catch((error40) => this._onerror(new Error(`Failed to send an error response: ${error40}`)));
+      } else if (relatedTaskId && this._taskMessageQueue) {
         this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
           message: errorResponse,
@@ -28334,7 +28353,10 @@ var Protocol = class {
       closeSSEStream: extra?.closeSSEStream,
       closeStandaloneSSEStream: extra?.closeStandaloneSSEStream
     };
-    Promise.resolve().then(() => {
+    (relatedTaskLookup ?? Promise.resolve()).then(() => {
+      if (relatedTaskLookup && abortController.signal.aborted) {
+        throw new McpError(ErrorCode.ConnectionClosed, "Request was cancelled");
+      }
       if (taskCreationParams) {
         this.assertTaskHandlerCapability(request.method);
       }
@@ -28369,7 +28391,7 @@ var Protocol = class {
           ...error40["data"] !== void 0 && { data: error40["data"] }
         }
       };
-      if (relatedTaskId && this._taskMessageQueue) {
+      if (relatedTaskId && this._taskMessageQueue && relatedTaskFound) {
         await this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
           message: errorResponse,
@@ -28849,7 +28871,7 @@ var Protocol = class {
       throw new Error("Cannot enqueue task message: taskStore and taskMessageQueue are not configured");
     }
     const maxQueueSize = this._options?.maxTaskQueueSize;
-    await this._taskMessageQueue.enqueue(taskId, message, sessionId, maxQueueSize);
+    await this._taskMessageQueue.enqueue(taskId, message, sessionId ?? this._transport?.sessionId, maxQueueSize);
   }
   /**
    * Clears the message queue for a task and rejects any pending request resolvers.
@@ -28878,12 +28900,13 @@ var Protocol = class {
    * Uses polling to check for updates at the task's configured poll interval.
    * @param taskId The task ID to wait for
    * @param signal Abort signal to cancel the wait
+   * @param sessionId Session of the request that waits, passed to the task store
    * @returns Promise that resolves when an update occurs or rejects if aborted
    */
-  async _waitForTaskUpdate(taskId, signal) {
+  async _waitForTaskUpdate(taskId, signal, sessionId) {
     let interval = this._options?.defaultTaskPollInterval ?? 1e3;
     try {
-      const task = await this._taskStore?.getTask(taskId);
+      const task = await this._taskStore?.getTask(taskId, sessionId);
       if (task?.pollInterval) {
         interval = task.pollInterval;
       }
@@ -29762,6 +29785,42 @@ var ExperimentalMcpServerTasks = class {
 };
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
+function toolInputElementCount(value, max) {
+  let count = 0;
+  const stack = [value];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === null || typeof node !== "object")
+      continue;
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        if (++count > max)
+          return count;
+        if (child !== null && typeof child === "object")
+          stack.push(child);
+      }
+    } else {
+      for (const key in node) {
+        if (!Object.prototype.hasOwnProperty.call(node, key))
+          continue;
+        if (++count > max)
+          return count;
+        const child = node[key];
+        if (child !== null && typeof child === "object")
+          stack.push(child);
+      }
+    }
+  }
+  return count;
+}
+function resolveMaxToolInputElements(value) {
+  if (value === void 0 || value === Infinity)
+    return void 0;
+  if (typeof value !== "number" || Number.isNaN(value) || value < 1) {
+    throw new RangeError(`maxToolInputElements must be a number of at least 1, or Infinity, got ${String(value)}`);
+  }
+  return value;
+}
 var McpServer = class {
   constructor(serverInfo, options) {
     this._registeredResources = {};
@@ -29773,6 +29832,7 @@ var McpServer = class {
     this._resourceHandlersInitialized = false;
     this._promptHandlersInitialized = false;
     this.server = new Server(serverInfo, options);
+    this._maxToolInputElements = resolveMaxToolInputElements(options?.maxToolInputElements);
   }
   /**
    * Access experimental features.
@@ -29903,12 +29963,15 @@ var McpServer = class {
    * Validates tool input arguments against the tool's input schema.
    */
   async validateToolInput(tool2, args, toolName) {
+    if (this._maxToolInputElements !== void 0 && toolInputElementCount(args, this._maxToolInputElements) > this._maxToolInputElements) {
+      throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for tool ${toolName}: arguments contain more than the maximum of ${this._maxToolInputElements} elements`);
+    }
     if (!tool2.inputSchema) {
       return void 0;
     }
     const inputObj = normalizeObjectSchema(tool2.inputSchema);
     const schemaToParse = inputObj ?? tool2.inputSchema;
-    const parseResult = await safeParseAsync2(schemaToParse, args);
+    const parseResult = await safeParseAsync2(schemaToParse, args ?? {});
     if (!parseResult.success) {
       const error40 = "error" in parseResult ? parseResult.error : "Unknown error";
       const errorMessage = getParseErrorMessage(error40);
@@ -30146,7 +30209,7 @@ var McpServer = class {
       }
       if (prompt.argsSchema) {
         const argsObj = normalizeObjectSchema(prompt.argsSchema);
-        const parseResult = await safeParseAsync2(argsObj, request.params.arguments);
+        const parseResult = await safeParseAsync2(argsObj, request.params.arguments ?? {});
         if (!parseResult.success) {
           const error40 = "error" in parseResult ? parseResult.error : "Unknown error";
           const errorMessage = getParseErrorMessage(error40);
@@ -30661,7 +30724,7 @@ var StdioServerTransport = class {
 };
 
 // packages/mcp/src/index.ts
-import { stat as stat5 } from "node:fs/promises";
+import { stat as stat6 } from "node:fs/promises";
 import { resolve as resolvePath2 } from "node:path";
 
 // packages/core/src/adopt.ts
@@ -31860,7 +31923,7 @@ async function archiveVersion(app, version2, out) {
   const prefix = subdir && subdir !== "." ? `${subdir.replace(/\/$/, "")}/` : "";
   const args = ["archive", "--format=tar", version2.id];
   if (prefix) args.push(prefix);
-  const git2 = execFile2("git", args, { cwd: app.path, maxBuffer: 512 * 1024 * 1024 });
+  const git2 = execFile2("git", args, { cwd: app.path, maxBuffer: 512 * 1024 * 1024, encoding: "buffer" });
   const tar = execFile2("tar", ["-x", "-C", out, ...prefix ? ["--strip-components", "1"] : []]);
   git2.stdout?.pipe(tar.stdin);
   const [, tarResult] = await Promise.allSettled([
@@ -32607,6 +32670,8 @@ Sharing: when the person asks to share the app with someone or change who can op
 
 Apps others shared: list_shared_with_me shows them. To work on one with Can edit, call open_shared_app with a folder: versions saved there go to its owner as a proposed change they can keep (say "proposed change" to the person), and only the owner publishes; with copy true it becomes the person's own app. If their proposed change is out of date because the owner changed the app after they started, call update_my_version. With Can use, they can't change it: send the owner the change with suggest_change. When whats_new says someone proposed a change, the owner can keep it on the Freckles page; or call fetch_ideas, show the person the change, and keep_idea only if they want it.
 
+Selling: when an app needs to charge for something (a shop, a booking with a deposit, tickets, a class), never build a card form, never store card details and don't suggest another payment service. Call take_payments once (the person's own Stripe account: the money goes straight to them), then add_sale_item for each thing sold. It gives you a script tag and a button for the app's own page; the price is kept in Freckles, not in the page, and the customer pays on Stripe's page and comes back to the page. What was paid is in list_sales_orders; list_sales and change_sale_item show and change what is sold. Say plainly that Stripe charges the person its own fee on every payment and Freckles keeps 2% on the free plans, nothing on Pro. Nothing paid-for should unlock from the address the customer comes back to alone.
+
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
 
 Updating Freckles itself: when whats_new says the plugin is out of date, offer to run it for them. In Claude Code: \`claude plugin marketplace update freckles\` then \`claude plugin update freckles@freckles\`; then they restart the agent. For the Windows dot next to the clock, call install_menu_dot when they ask.
@@ -32624,11 +32689,13 @@ import { join as join12 } from "node:path";
 import { promisify as promisify9 } from "node:util";
 
 // packages/mcp/src/cloud.ts
-import { chmod as chmod2, mkdir as mkdir8, mkdtemp, readFile as readFile8, rm as rm7, writeFile as writeFile6 } from "node:fs/promises";
+import { chmod as chmod2, mkdir as mkdir8, mkdtemp, readFile as readFile8, rm as rm7, stat as stat4, writeFile as writeFile6 } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { Readable } from "node:stream";
 import { homedir as homedir4, hostname as hostname2 } from "node:os";
 import { basename as basename3, dirname as dirname2, join as join11 } from "node:path";
 import { execFile as execFile6 } from "node:child_process";
-import { existsSync as existsSync2 } from "node:fs";
+import { createReadStream as createReadStream2, existsSync as existsSync2 } from "node:fs";
 import { tmpdir } from "node:os";
 import { promisify as promisify8 } from "node:util";
 
@@ -32734,7 +32801,19 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.6.0" : "dev";
+var COMPANION_VERSION = true ? "0.7.0" : "dev";
+function agentApp(env = process.env) {
+  if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
+  const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
+  if (entry.includes("vscode")) return "VS Code";
+  if (entry.includes("jetbrains")) return "JetBrains";
+  if (entry === "cli" || entry.startsWith("claude")) return "Claude Code";
+  return void 0;
+}
+function computerHeader() {
+  const app = agentApp();
+  return encodeURIComponent(JSON.stringify({ name: hostname2().replace(/\.local$/, ""), platform: { darwin: "Mac", win32: "Windows", linux: "Linux" }[process.platform] ?? process.platform, ...app ? { app } : {} }));
+}
 var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
 var CONFIG = join11(HOME2, "secrets", "companion.json");
 var QUEUE = join11(HOME2, "companion-queue.json");
@@ -32763,7 +32842,7 @@ async function api(c, method, path2, body) {
   try {
     res = await fetch(`${c.url}${path2}`, {
       method,
-      headers: { "content-type": "application/json", "x-freckles-plugin": COMPANION_VERSION, ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
+      headers: { "content-type": "application/json", "x-freckles-plugin": COMPANION_VERSION, "x-freckles-computer": computerHeader(), ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
       body: body === void 0 ? void 0 : JSON.stringify(body),
       signal: AbortSignal.timeout(6e4)
     });
@@ -32789,7 +32868,7 @@ async function upload(c, path2, bytes) {
   try {
     res = await fetch(`${c.url}${path2}`, {
       method: "POST",
-      headers: { "content-type": "application/octet-stream", "x-freckles-plugin": COMPANION_VERSION, ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
+      headers: { "content-type": "application/octet-stream", "x-freckles-plugin": COMPANION_VERSION, "x-freckles-computer": computerHeader(), ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
       body: bytes,
       signal: AbortSignal.timeout(12e4)
     });
@@ -33033,6 +33112,43 @@ COPY . /srv
 EXPOSE 8080
 CMD ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
 `;
+var MAX_UPLOAD = Number(process.env.FRECKLES_MAX_UPLOAD_BYTES) || 100 * 1024 * 1024;
+var PUBLISH_WAIT_MS = Number(process.env.FRECKLES_PUBLISH_WAIT_MS) || 6e4;
+var POLL_MS = Number(process.env.FRECKLES_POLL_MS) || 3e3;
+var RETRY_MS = Number(process.env.FRECKLES_RETRY_MS ?? 1e3);
+var sleep3 = (ms) => new Promise((r2) => setTimeout(r2, ms));
+var StillBuilding = class extends Error {
+  constructor() {
+    super("Still building");
+    this.name = "StillBuilding";
+  }
+};
+var publishProgress = new AsyncLocalStorage();
+function withPublishProgress(report, fn) {
+  return report ? publishProgress.run(report, fn) : fn();
+}
+async function sendArchive(c, appId, file3, size, headers) {
+  let last;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${c.url}/api/v1/apps/${appId}/publish`, {
+        method: "POST",
+        headers: { ...headers, "content-length": String(size) },
+        body: Readable.toWeb(createReadStream2(file3)),
+        duplex: "half",
+        signal: AbortSignal.timeout(10 * 6e4)
+      });
+      if (res.status >= 502 && res.status <= 504 && attempt < 3) {
+        await res.arrayBuffer().catch(() => void 0);
+        last = new Error(`Freckles answered ${res.status}`);
+      } else return res;
+    } catch (err) {
+      last = err;
+    }
+    if (attempt < 3) await sleep3(RETRY_MS * attempt);
+  }
+  throw new Error(`Freckles online (${c.url}) couldn't be reached to upload this version, even after trying again: ${last instanceof Error ? last.message : last}. Nothing was published; try again in a minute.`);
+}
 async function disconnect() {
   const c = await readConfig();
   if (!c.token) return "This computer isn't connected to Freckles online, so there's nothing to disconnect.";
@@ -33062,7 +33178,10 @@ var frecklesHosting = {
     const c = await readConfig();
     if (!c.token) throw new NotConnected();
     const { appId } = await ensureRegistered(c, app);
-    const dir = await mkdtemp(join11(tmpdir(), "freckles-publish-"));
+    const root = await mkdtemp(join11(tmpdir(), "freckles-publish-"));
+    const dir = join11(root, "files");
+    const archive = join11(root, "version.tar.gz");
+    const report = publishProgress.getStore();
     try {
       await archiveVersion(app, version2, dir);
       const heldBack = await holdBackRisky(dir);
@@ -33073,44 +33192,61 @@ var frecklesHosting = {
         throw err;
       }
       if (kind === "static") await writeFile6(join11(dir, "Dockerfile"), STATIC_DOCKERFILE);
-      const mac = process.platform === "darwin" ? ["--no-xattrs", "--no-mac-metadata"] : [];
-      const { stdout } = await promisify8(execFile6)("tar", [...mac, "-czf", "-", "-C", dir, "."], {
-        encoding: "buffer",
-        maxBuffer: 200 * 1024 * 1024,
-        env: { ...process.env, COPYFILE_DISABLE: "1" }
-      });
-      const res = await fetch(`${c.url}/api/v1/apps/${appId}/publish`, {
-        method: "POST",
-        headers: {
+      const building = await api(c, "GET", `/api/v1/apps/${appId}/publish`).then(
+        (j2) => j2.status === "building" && j2.sha === version2.id && Date.now() - Date.parse(j2.heartbeatAt ?? j2.startedAt ?? "") < 3 * 6e4,
+        () => false
+      );
+      if (!building) {
+        const mac = process.platform === "darwin" ? ["--no-xattrs", "--no-mac-metadata"] : [];
+        report?.("Packing the files");
+        await promisify8(execFile6)("tar", [...mac, "-czf", archive, "-C", dir, "."], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
+        const { size } = await stat4(archive);
+        if (size > MAX_UPLOAD) {
+          const mb = Math.round(size / 1024 / 1024);
+          const err = new Error(`This app is ${mb} MB once packed, and Freckles Hosting takes up to ${Math.round(MAX_UPLOAD / 1024 / 1024)} MB. It was not sent and nothing changed online.`);
+          err.agent = "The packed version is over the upload limit. Look for large files that don't need to be published (videos, datasets, build output, node_modules, backups), move or remove them, save a new version, then publish again. Tell the person in plain words which files were big.";
+          throw err;
+        }
+        report?.(`Uploading ${(size / 1024 / 1024).toFixed(1)} MB`);
+        const res = await sendArchive(c, appId, archive, size, {
           authorization: `Bearer ${c.token}`,
           "x-freckles-plugin": COMPANION_VERSION,
+          "x-freckles-computer": computerHeader(),
           "content-type": "application/gzip",
           "x-freckles-version": version2.id,
           "x-freckles-kind": kind,
           "x-freckles-port": String(app.preview?.kind === "command" ? app.preview.port : 8080)
-        },
-        body: stdout,
-        signal: AbortSignal.timeout(5 * 6e4)
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        if (res.status === 401) throw new NotConnected();
-        throw new Error(e.error ?? `Freckles refused (${res.status})`);
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          if (res.status === 401) throw new NotConnected();
+          throw new Error(e.error ?? `Freckles refused (${res.status})`);
+        }
       }
-      const deadline = Date.now() + 25 * 6e4;
+      const deadline = Date.now() + PUBLISH_WAIT_MS;
+      let lastStep = "";
+      let failures = 0;
       while (Date.now() < deadline) {
-        await new Promise((r2) => setTimeout(r2, 4e3));
-        const job = await api(c, "GET", `/api/v1/apps/${appId}/publish`);
+        await sleep3(Math.min(POLL_MS, Math.max(0, deadline - Date.now())));
+        let job;
+        try {
+          job = await api(c, "GET", `/api/v1/apps/${appId}/publish`);
+          failures = 0;
+        } catch (err) {
+          if (err instanceof NotConnected || ++failures >= 3) throw err;
+          continue;
+        }
         if (job.status === "live" && job.url) return { url: job.url, heldBack };
         if (job.status === "failed") {
           const err = new Error(`Publishing didn't work${job.step === "The build didn't work" ? ": the app couldn't be built" : ""}. What's live hasn't changed.`);
           err.agent = job.detail ?? "No detail was recorded.";
           throw err;
         }
+        if (job.step && job.step !== lastStep) report?.(lastStep = job.step);
       }
-      throw new Error("Publishing is taking longer than usual. It carries on in Freckles; call whats_new in a few minutes.");
+      throw new StillBuilding();
     } finally {
-      await rm7(dir, { recursive: true, force: true });
+      await rm7(root, { recursive: true, force: true });
     }
   },
   async unpublish(app) {
@@ -33233,7 +33369,7 @@ async function takePayments() {
   const c = await signedIn();
   const status = await api(c, "GET", "/api/v1/payments");
   if (!status.offered) return "Taking payments isn't switched on in Freckles yet. Tell the person it's coming, and don't build payments some other way.";
-  if (status.connected) return `Payments are already connected: the person's own Stripe account receives the money. Use sell_on_page to make a payment link for something they sell. Freckles keeps ${status.feeBp / 100}% of each payment${status.feeBp ? " (it's free on Pro)" : ""}; Stripe's own fees are the person's, as for any Stripe account.`;
+  if (status.connected) return `Payments are already connected: the person's own Stripe account receives the money. Use add_sale_item for each thing they sell: it gives you the few lines that let the app's own page take payment (or sell_on_page for one link to send around). Freckles keeps ${status.feeBp / 100}% of each payment${status.feeBp ? " (it's free on Pro)" : ""}; Stripe's own fees are the person's, as for any Stripe account.`;
   const { url: url2 } = await api(c, "POST", "/api/v1/payments/connect");
   return `Give the person this link to connect their Stripe account, word for word: ${url2}
 Stripe asks for their details and bank account on its own page; Freckles never sees them. Money from their customers goes straight to them. Tell them it takes a few minutes, and call take_payments again afterwards to check it's ready.${status.account?.needs ? ` Stripe says: ${status.account.needs}` : ""}`;
@@ -33248,7 +33384,72 @@ async function sellOnPage(app, sale) {
     `Payment page for ${sale.name} (${symbol2(sale.currency)}${(amountMinor / 100).toFixed(2)}): ${r2.url}`,
     "Make the app's button or link go to that address. The customer pays on Stripe's page, the money goes to the person's own Stripe account, and they come back to the app afterwards.",
     r2.feeMinor ? `Freckles keeps ${symbol2(sale.currency)}${(r2.feeMinor / 100).toFixed(2)} of each payment; it's free on Pro.` : "Freckles keeps nothing from these payments.",
-    "Each payment page is for this price: if the price changes, make a new one. Never put a card form in the app itself."
+    "This one address is for this price, and Stripe stops honouring it after about a day: if the price changes, make a new one. Never put a card form in the app itself.",
+    r2.item ? `It is also kept as the item "${r2.item.id}" in the app, so what is paid shows in list_sales_orders. For a button on one of the app's own pages, use add_sale_item instead: the page asks for a fresh payment page when the customer clicks, so nothing expires.` : ""
+  ].filter(Boolean).join("\n");
+}
+var itemLine = (i) => `- ${i.id}: ${i.name} \u2014 ${moneyOf(i.amountMinor, i.currency)}${i.description ? ` \u2014 ${i.description}` : ""}${i.active ? "" : " (off sale)"}`;
+function bridgeSnippet(i) {
+  return [
+    "Put this on the app's page (plain HTML; no server code, no card form, no keys):",
+    "",
+    `<script src="/_freckles/pay.js"></script>`,
+    `<button onclick="frecklesPay.checkout('${i.id}')">Buy \u2014 ${moneyOf(i.amountMinor, i.currency)}</button>`,
+    "",
+    `Other things the page may pass: frecklesPay.checkout('${i.id}', { quantity: 2, email: 'ana@example.com', returnPath: '/thanks.html', onError: (e) => showMessage(e.message) }). quantity is 1 to 20; email is optional and fills Stripe's form; returnPath is a page of this same app (default: the page the button is on). From a framework it is the same call, from any click handler.`,
+    "What happens: the button asks this app's own address for a Stripe payment page; the amount, currency and name come from the saved item, never from the page, so changing the price is change_sale_item, not an edit of the page. The customer pays on Stripe's page and is sent back to the same page with ?freckles_paid=1 in the address (?freckles_paid=0 if they backed out): show a thank-you when you see it. That address only says they came back, not that they paid: the payment itself arrives from Stripe a moment later and shows in list_sales_orders, so don't unlock anything paid-for from the address alone.",
+    "It works on the online address once payments are connected (take_payments); until then the button tells the customer it can't take payments yet. Never build a card form or store card details."
+  ].join("\n");
+}
+function feesLine(feeBp) {
+  return `Fees: Stripe charges the person's own Stripe account its usual fee on every payment (roughly 1.5% to 3% plus a few cents, depending on their country and the card; Stripe's pricing page for their country has the exact figure). On top of that Freckles keeps ${feeBp ? `${feeBp / 100}% on the free plans` : "nothing"}${feeBp ? " and nothing on Pro" : " (Pro)"}. Refunds and disputes are the person's, in their Stripe account; Freckles never holds the money. A single order can't come to more than 5,000 in the item's currency unless the person is on Pro with Stripe's form finished.`;
+}
+async function addSaleItem(app, item) {
+  const c = await signedIn();
+  const appId = await onlineId(app, "there's nowhere to keep what it sells");
+  const amountMinor = Math.round(item.amount * 100);
+  const r2 = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(appId)}/sale-items`, { id: item.id, name: item.name, description: item.description, amountMinor, currency: item.currency });
+  const status = await api(c, "GET", "/api/v1/payments").catch(() => void 0);
+  return [
+    `Now selling ${itemLine(r2.item).slice(2)}.`,
+    bridgeSnippet(r2.item),
+    status ? status.connected ? "Payments are connected." : status.offered ? "Payments are NOT connected yet: call take_payments and give the person the link before they publish, or customers will see that it can't take payments yet." : "Taking payments isn't switched on in Freckles yet." : "",
+    status ? feesLine(status.feeBp) : ""
+  ].filter(Boolean).join("\n");
+}
+async function listSales(app) {
+  const c = await signedIn();
+  const appId = await onlineId(app, "there's nothing it sells yet");
+  const { items } = await api(c, "GET", `/api/v1/apps/${encodeURIComponent(appId)}/sale-items`);
+  if (!items.length) return "This app doesn't sell anything yet. add_sale_item adds the first thing.";
+  return [`What this app sells (${items.length}):`, ...items.map(itemLine), "", `To put one on a page: <script src="/_freckles/pay.js"></script> and <button onclick="frecklesPay.checkout('ITEM_ID')">\u2026</button>.`].join("\n");
+}
+async function changeSaleItem(app, id, change) {
+  const c = await signedIn();
+  const appId = await onlineId(app, "there's nothing it sells yet");
+  const r2 = await api(c, "PATCH", `/api/v1/apps/${encodeURIComponent(appId)}/sale-items/${encodeURIComponent(id)}`, {
+    name: change.name,
+    description: change.description,
+    currency: change.currency,
+    amountMinor: change.amount === void 0 ? void 0 : Math.round(change.amount * 100),
+    active: change.active
+  });
+  return `${itemLine(r2.item).slice(2)}. ${r2.item.active ? "The app's buttons use the new details straight away; no change to the page is needed." : "It is off sale: its button now tells the customer it isn't for sale. Orders already paid are kept."}`;
+}
+var safeEmail = (v2) => typeof v2 === "string" && /^[A-Za-z0-9._%+'-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$/.test(v2) ? v2 : "";
+async function listSalesOrders(app, limit = 25) {
+  const c = await signedIn();
+  const appId = await onlineId(app, "nothing has been paid on it");
+  const r2 = await api(c, "GET", `/api/v1/apps/${encodeURIComponent(appId)}/sales-orders?limit=${Math.max(1, Math.min(200, Math.floor(limit)))}`);
+  if (!r2.orders.length) return "Nothing has been paid on this app yet.";
+  return [
+    "Totals per item (refunded and disputed payments not counted):",
+    ...r2.totals.map((t) => `- ${t.itemName}: ${t.orders} order${t.orders === 1 ? "" : "s"}, ${t.quantity} sold, ${moneyOf(t.amountMinor, t.currency)}${t.reversed ? `; ${t.reversed} refunded or disputed (${moneyOf(t.reversedMinor, t.currency)})` : ""}`),
+    "",
+    "Recent payments, newest first:",
+    ...r2.orders.map((o) => `- ${o.paidAt.slice(0, 16).replace("T", " ")} \xB7 ${o.itemName}${o.quantity > 1 ? ` \xD7 ${o.quantity}` : ""} \xB7 ${moneyOf(o.amountMinor, o.currency)}${o.feeMinor ? ` (Freckles kept ${moneyOf(o.feeMinor, o.currency)})` : ""}${o.status === "paid" ? "" : ` \xB7 ${o.status}${o.refundedMinor ? ` ${moneyOf(o.refundedMinor, o.currency)}` : ""}`}${safeEmail(o.customerEmail) ? ` \xB7 customer ${safeEmail(o.customerEmail)}` : ""}`),
+    "",
+    "Customer addresses are personal data, given to Stripe by the customer: use them only to help the person with their orders, never put them in the app's pages or share them. Refunds and disputes are handled in the person's own Stripe account."
   ].join("\n");
 }
 async function useMyDomain(app, host) {
@@ -33738,7 +33939,7 @@ var TIMELINE_HTML = `<!doctype html>
 
 // packages/mcp/src/shared.ts
 import { execFile as execFile8 } from "node:child_process";
-import { mkdtemp as mkdtemp3, readdir as readdir4, readFile as readFile9, rm as rm9, stat as stat4 } from "node:fs/promises";
+import { mkdtemp as mkdtemp3, readdir as readdir4, readFile as readFile9, rm as rm9, stat as stat5 } from "node:fs/promises";
 import { tmpdir as tmpdir3 } from "node:os";
 import { dirname as dirname3, join as join13, resolve as resolvePath } from "node:path";
 import { promisify as promisify10 } from "node:util";
@@ -33845,7 +34046,7 @@ async function isEmptyOrMissing(dir) {
   }
 }
 async function exists2(path2) {
-  return stat4(path2).then(() => true, () => false);
+  return stat5(path2).then(() => true, () => false);
 }
 async function target(folder, name) {
   const base = resolvePath(folder.replace(/^~/, process.env.HOME ?? "~"));
@@ -34106,11 +34307,16 @@ function signInGuide(stack) {
       'import { createHmac, timingSafeEqual } from "node:crypto";',
       "function whoIs(req) {",
       '  const h = (n) => req.get(`x-freckles-${n}`) ?? "";',
-      '  const [app, team, user, role] = [h("app"), h("team"), h("user"), h("role")];',
-      '  const want = createHmac("sha256", process.env.FRECKLES_APP_SECRET ?? "").update(`${app}|${team}|${user}|${role}`).digest();',
-      '  const got = Buffer.from(h("signature"), "hex");',
-      "  if (!process.env.FRECKLES_APP_SECRET || got.length !== want.length || !timingSafeEqual(got, want)) return null;",
-      '  return { email: user || null, name: decodeURIComponent(h("name")), role, team };',
+      "  const secret = process.env.FRECKLES_APP_SECRET;",
+      '  const at = Number(h("timestamp"));',
+      "  // Only a fresh request: a signature is good for one minute.",
+      "  if (!secret || !Number.isInteger(at) || Math.abs(Date.now() / 1000 - at) > 60) return null;",
+      '  const host = (req.get("x-forwarded-host") ?? req.hostname).toLowerCase();',
+      '  const text = ["v2", at, host, req.method.toUpperCase(), h("app"), h("team"), h("user"), h("role"), h("name")].join("|");',
+      '  const want = createHmac("sha256", secret).update(text).digest();',
+      '  const got = Buffer.from(h("signature-v2"), "hex");',
+      "  if (got.length !== want.length || !timingSafeEqual(got, want)) return null;",
+      '  return { email: h("user") || null, name: decodeURIComponent(h("name")), role: h("role"), team: h("team") };',
       "}",
       'app.get("/admin", (req, res) => (whoIs(req)?.role === "edit" ? res.send("\u2026") : res.status(403).send("Only people who can edit this app")));',
       "```"
@@ -34118,16 +34324,18 @@ function signInGuide(stack) {
     python: [
       "Python (Flask shown; any framework reads the same headers):",
       "```python",
-      "import hashlib, hmac, os",
+      "import hashlib, hmac, os, time",
       "from urllib.parse import unquote",
-      "def who_is(headers):",
+      "def who_is(headers, method, host):",
       '    h = lambda n: headers.get(f"x-freckles-{n}", "")',
-      '    msg = "|".join([h("app"), h("team"), h("user"), h("role")]).encode()',
       '    secret = os.environ.get("FRECKLES_APP_SECRET", "").encode()',
-      '    if not secret or not hmac.compare_digest(hmac.new(secret, msg, hashlib.sha256).hexdigest(), h("signature")):',
+      '    if not secret or not h("timestamp").isdigit() or abs(time.time() - int(h("timestamp"))) > 60:',
+      "        return None  # no secret, or a request older than a minute",
+      '    msg = "|".join(["v2", h("timestamp"), host.lower(), method.upper(), h("app"), h("team"), h("user"), h("role"), h("name")]).encode()',
+      '    if not hmac.compare_digest(hmac.new(secret, msg, hashlib.sha256).hexdigest(), h("signature-v2")):',
       "        return None",
       '    return {"email": h("user") or None, "name": unquote(h("name")), "role": h("role"), "team": h("team")}',
-      "# in a view: me = who_is(request.headers)",
+      '# in a view: me = who_is(request.headers, request.method, request.headers.get("x-forwarded-host") or request.host)',
       "```"
     ].join("\n")
   };
@@ -34141,7 +34349,8 @@ function signInGuide(stack) {
     "- x-freckles-role: use, edit or anonymous (what they may do with this app; use it to show or hide editing)",
     "- x-freckles-team: the workspace the app belongs to",
     "- x-freckles-app: the app's id",
-    "- x-freckles-signature: HMAC-SHA256, in hex, of `${app}|${team}|${user}|${role}` (those four header values joined by |) with the secret in the environment variable FRECKLES_APP_SECRET. A server checks it before trusting the others.",
+    "- x-freckles-timestamp: when Freckles signed the request, in whole seconds since 1970",
+    "- x-freckles-signature-v2: HMAC-SHA256, in hex, of `v2|${x-freckles-timestamp}|${host.toLowerCase()}|${METHOD}|${app}|${team}|${user}|${role}|${x-freckles-name as sent}` (the header values joined by |, the name still URI-encoded exactly as it arrived; host is the address the visitor used, which the app sees as x-forwarded-host; METHOD is the request's method in upper case) with the secret in the environment variable FRECKLES_APP_SECRET. A server compares it in constant time, and rejects a timestamp more than 60 seconds old, before trusting the other headers. The older x-freckles-signature (no time, address or name in it) can be replayed: don't rely on it.",
     "From the app's own pages, GET /_freckles/me answers { email, name, team, role } for whoever is looking, so even a static page can greet people by name. /_data/<collection> stores information online (POST a JSON record, GET { records }), the same shape as on this computer; records are stamped with who added them, and only that person or someone who can edit may change them.",
     "On this computer, and for an app whose address isn't behind Freckles' sign-in yet, the headers are absent: treat that as nobody signed in, and keep every page working. Choose who may open the app with share_app, not in code.",
     "",
@@ -34165,7 +34374,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.6.0" : "dev";
+var VERSION = true ? "0.7.0" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -34194,15 +34403,15 @@ async function changeableApp(ref, what) {
 }
 async function isDirectory(path2) {
   try {
-    return (await stat5(path2)).isDirectory();
+    return (await stat6(path2)).isDirectory();
   } catch {
     return false;
   }
 }
 function tool(name, description, inputSchema, handler) {
-  server.registerTool(name, { description, inputSchema }, async (args) => {
+  server.registerTool(name, { description, inputSchema }, async (args, extra) => {
     try {
-      return { content: [{ type: "text", text: await handler(args) }] };
+      return { content: [{ type: "text", text: await handler(args, extra) }] };
     } catch (err) {
       return failure(err);
     }
@@ -34524,7 +34733,7 @@ tool(
     app: appRef,
     version: external_exports.string().optional().describe("The short id of the version to publish. Defaults to the one showing now.")
   },
-  async ({ app: ref, version: version2 }) => {
+  async ({ app: ref, version: version2 }, extra) => {
     const app = await changeableApp(ref, "publish");
     await refuseForContribution(app, "publishes");
     const where = app.published?.provider === "your-azure" ? ownAzure : await connected() ? frecklesHosting : provider;
@@ -34532,7 +34741,18 @@ tool(
     if (!check3.ok) throw new Error(check3.because);
     const chosen = await getVersion(app, version2 ?? "HEAD");
     if (!chosen) throw new Error("that version is not in this app's timeline");
-    const { publication, heldBack } = await publish(app, chosen, where);
+    const token = extra._meta?.progressToken;
+    let n = 0;
+    const report = token === void 0 ? void 0 : (message) => void extra.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: ++n, message } }).catch(() => void 0);
+    let published;
+    try {
+      published = await withPublishProgress(report, () => publish(app, chosen, where));
+    } catch (err) {
+      if (err instanceof StillBuilding)
+        return `Still building: the files are uploaded and Freckles is building them, which can take a few minutes. Freckles will tell you when it is live; call whats_new in a little while. Tell the person it's on its way, and don't say it's live until you've heard.`;
+      throw err;
+    }
+    const { publication, heldBack } = published;
     const page = await appPath(app);
     return [
       `Published: ${publication.url}`,
@@ -34887,13 +35107,13 @@ tool(
 );
 tool(
   "take_payments",
-  "Connect the person's Stripe account so their apps can take payments. Gives you the link for them to open (Stripe asks for their details on its own page, and the money from their customers goes straight to them), or says it's already ready. Use this, then sell_on_page, whenever an app needs to charge for something: never build a card form or hold payment details in the app. Free to use; Freckles keeps 2% of each payment on the free plans and nothing on Pro.",
+  "Connect the person's Stripe account so their apps can take payments. Gives you the link for them to open (Stripe asks for their details on its own page, and the money from their customers goes straight to them), or says it's already ready. Use this, then add_sale_item for each thing the app sells, whenever an app needs to charge for something: never build a card form or hold payment details in the app. Free to use; Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card) and Freckles keeps 2% on the free plans and nothing on Pro.",
   {},
   async () => takePayments()
 );
 tool(
   "sell_on_page",
-  "Make a payment page for something the person sells on an app (a class, a booking, a product), and get the address to send customers to. The app must be online and payments connected (take_payments). Customers pay on Stripe's page, the money goes to the person's own Stripe account, and they come back to the app afterwards. One payment page is for one price.",
+  "Make a payment page for something the person sells on an app (a class, a booking, a product), and get the address to send customers to. The app must be online and payments connected (take_payments). Customers pay on Stripe's page, the money goes to the person's own Stripe account, and they come back to the app afterwards. One payment page is for one price, and the address stops working after about a day: for a button on one of the app's own pages, use add_sale_item instead (the same thing is kept as an item, so the payments show up in list_sales_orders).",
   {
     app: appRef,
     name: external_exports.string().describe("What the customer is buying, as they should see it: 'Haircut', 'Spring workshop'."),
@@ -34901,6 +35121,45 @@ tool(
     currency: external_exports.string().length(3).describe("Three letters, e.g. EUR, USD, GBP.")
   },
   async ({ app: ref, name, amount, currency }) => sellOnPage(await changeableApp(ref, "sell_on_page"), { name, amount, currency })
+);
+tool(
+  "add_sale_item",
+  "Make something the app sells (a class, a product, a booking deposit) payable from the app's own pages, and get the few lines of HTML that go on the page: a script tag and a button, no server code, no card form. The customer pays on Stripe's page, the money goes straight to the person's own Stripe account (call take_payments first), they come back to the same page afterwards, and the payment shows in list_sales_orders. The price lives here, never in the page, so nobody can change it from a browser. Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card); Freckles keeps 2% on the free plans and nothing on Pro. Up to 50 items an app. Can be done before the app is online.",
+  {
+    app: appRef,
+    name: external_exports.string().describe("What the customer is buying, as they should see it on Stripe's page: 'Haircut', 'Spring workshop'."),
+    amount: external_exports.number().positive().describe("The price of one, in whole units of the currency, e.g. 30 or 12.5."),
+    currency: external_exports.string().length(3).describe("Three letters: EUR, USD, GBP, CAD, AUD, NZD, CHF, SEK, NOK or DKK."),
+    id: external_exports.string().optional().describe("A short name for the page to use, letters, digits and dashes, like 'haircut'. Left out, it is made from the name."),
+    description: external_exports.string().optional().describe("A line under the name on Stripe's page: 'Saturday 10:00, 3 hours'.")
+  },
+  async ({ app: ref, name, amount, currency, id, description }) => addSaleItem(await changeableApp(ref, "add_sale_item"), { name, amount, currency, id, description })
+);
+tool(
+  "list_sales",
+  "List what an app sells: each item with its id, price and whether it is on sale. The id is what the page names in its button.",
+  { app: appRef },
+  async ({ app: ref }) => listSales(await resolveApp(ref))
+);
+tool(
+  "change_sale_item",
+  "Change an item the app sells: its price, name or description, or stop selling it (active false) or start again. The app's buttons use the change straight away; the page does not need editing. Payments already received are kept.",
+  {
+    app: appRef,
+    id: external_exports.string().describe("The item's id, from list_sales."),
+    name: external_exports.string().optional(),
+    amount: external_exports.number().positive().optional().describe("The new price of one, in whole units of the currency."),
+    currency: external_exports.string().length(3).optional(),
+    description: external_exports.string().optional(),
+    active: external_exports.boolean().optional().describe("false takes it off sale; true puts it back.")
+  },
+  async ({ app: ref, id, ...change }) => changeSaleItem(await changeableApp(ref, "change_sale_item"), id, change)
+);
+tool(
+  "list_sales_orders",
+  "List what customers paid on an app's own pages: the totals per item and the latest payments, with refunds and disputes marked. Customer email addresses in it are personal data: use them only to help the person, never in the app's pages. The money is in the person's own Stripe account.",
+  { app: appRef, limit: external_exports.number().int().min(1).max(200).optional().describe("How many recent payments to list (25 by default).") },
+  async ({ app: ref, limit }) => listSalesOrders(await resolveApp(ref), limit)
 );
 tool(
   "use_my_domain",
@@ -34974,4 +35233,6 @@ tool(
   },
   async ({ days, confirm }) => pauseUnused(days ?? 30, confirm === true)
 );
+process.on("unhandledRejection", (reason) => console.error("[freckles] unhandled rejection:", reason instanceof Error ? reason.stack ?? reason.message : reason));
+process.on("uncaughtException", (err) => console.error("[freckles] uncaught exception:", err instanceof Error ? err.stack ?? err.message : err));
 await server.connect(new StdioServerTransport());

@@ -68,7 +68,8 @@ var RECORD = "";
 var FORMAT = ["%H", "%s", "%b", "%aI", "%an"].join(FIELD) + RECORD;
 
 // packages/mcp/src/cloud.ts
-import { chmod, mkdir as mkdir2, mkdtemp, readFile as readFile2, rm, writeFile as writeFile2 } from "node:fs/promises";
+import { chmod, mkdir as mkdir2, mkdtemp, readFile as readFile2, rm, stat, writeFile as writeFile2 } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { homedir as homedir3, hostname } from "node:os";
 import { basename, dirname, join as join3 } from "node:path";
 
@@ -192,7 +193,19 @@ var MAC_AGENT = join2(homedir2(), "Library", "LaunchAgents", "com.frecklescloud.
 var WIN_STARTUP = join2(process.env.APPDATA ?? "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Freckles Menu.lnk");
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.6.0" : "dev";
+var COMPANION_VERSION = true ? "0.7.0" : "dev";
+function agentApp(env = process.env) {
+  if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
+  const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
+  if (entry.includes("vscode")) return "VS Code";
+  if (entry.includes("jetbrains")) return "JetBrains";
+  if (entry === "cli" || entry.startsWith("claude")) return "Claude Code";
+  return void 0;
+}
+function computerHeader() {
+  const app = agentApp();
+  return encodeURIComponent(JSON.stringify({ name: hostname().replace(/\.local$/, ""), platform: { darwin: "Mac", win32: "Windows", linux: "Linux" }[process.platform] ?? process.platform, ...app ? { app } : {} }));
+}
 var HOME2 = process.env.CFP_HOME ?? join3(homedir3(), ".cloud-for-personal");
 var CONFIG = join3(HOME2, "secrets", "companion.json");
 var QUEUE = join3(HOME2, "companion-queue.json");
@@ -216,7 +229,7 @@ async function api(c, method, path, body) {
   try {
     res = await fetch(`${c.url}${path}`, {
       method,
-      headers: { "content-type": "application/json", "x-freckles-plugin": COMPANION_VERSION, ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
+      headers: { "content-type": "application/json", "x-freckles-plugin": COMPANION_VERSION, "x-freckles-computer": computerHeader(), ...c.token ? { authorization: `Bearer ${c.token}` } : {} },
       body: body === void 0 ? void 0 : JSON.stringify(body),
       signal: AbortSignal.timeout(6e4)
     });
@@ -246,6 +259,11 @@ async function linkTo(path) {
     return `${c.url}${path}`;
   }
 }
+var MAX_UPLOAD = Number(process.env.FRECKLES_MAX_UPLOAD_BYTES) || 100 * 1024 * 1024;
+var PUBLISH_WAIT_MS = Number(process.env.FRECKLES_PUBLISH_WAIT_MS) || 6e4;
+var POLL_MS = Number(process.env.FRECKLES_POLL_MS) || 3e3;
+var RETRY_MS = Number(process.env.FRECKLES_RETRY_MS ?? 1e3);
+var publishProgress = new AsyncLocalStorage();
 async function whatsNew(appId) {
   const c = await readConfig();
   if (!c.token) return [];

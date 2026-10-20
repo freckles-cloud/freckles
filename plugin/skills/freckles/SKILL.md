@@ -58,10 +58,19 @@ Never run `git commit`, `git push` or `git checkout` yourself for this app: `sav
 
 ## Payments, plans and their own address
 
-- Whenever an app needs to charge for something (a class, a booking, a product), call
-  `take_payments` once, then `sell_on_page` for each thing sold, and send customers to the address
-  it returns. The money goes to the person's own Stripe account. Never build a card form, never
-  store payment details in the app, and don't suggest another payment service.
+- Whenever an app needs to charge for something (a shop, a class, a booking deposit, tickets), call
+  `take_payments` once, then `add_sale_item` for each thing sold. It returns the lines for the app's
+  own page: `<script src="/_freckles/pay.js"></script>` and a button that calls
+  `frecklesPay.checkout('item-id')`. The price is kept in Freckles, never in the page; the customer
+  pays on Stripe's page and comes back to the same page with `?freckles_paid=1`. The money goes to
+  the person's own Stripe account. Never build a card form, never store payment details in the
+  app, and don't suggest another payment service. Never unlock something paid-for from the
+  `?freckles_paid=1` address alone: it only says the customer came back.
+- `list_sales_orders` shows what was paid (customer emails in it are personal data: never put them
+  in the app's pages), `list_sales` and `change_sale_item` show and change prices or take an item
+  off sale. `sell_on_page` still makes one payment link to send around; it expires after about a
+  day, so it is not for a button on a page. Say plainly that Stripe charges the person its own fee
+  on every payment, and that Freckles keeps 2% on the free plans and nothing on Pro.
 - Before saying anything about limits, price or why an app was paused, call `my_plan`. Offer
   `go_pro` only when the person asks or has run into a limit and chosen to pay; never start it for
   them. `manage_billing` is for changing the card or cancelling: if they cancel, Pro runs to the

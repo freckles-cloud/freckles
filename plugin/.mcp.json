@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "github:freckles-cloud/freckles#v0.6.0"
+        "github:freckles-cloud/freckles#v0.7.0"
       ]
     }
   }
