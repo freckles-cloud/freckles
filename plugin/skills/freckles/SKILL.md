@@ -33,13 +33,15 @@ When the person says an app they already have is missing from Freckles, call `fi
 shows their existing GitHub and Azure apps where they are, and never copies or publishes them.
 
 **An app the person already keeps in their own git repository** (on GitHub or elsewhere): by default Freckles only
-shows it and copies nothing, and their repository is never written to. If they say they want to carry on working in
-Freckles with it (the timeline, ideas, a picture of every version), explain plainly that Freckles will then keep its own
-private copy of the code, wait for their yes, and call `continue_in_freckles`. If it isn't on this computer yet, get it
-with their own git access first (`git clone`, using their usual sign-in), then `open_app` on the folder. When they want
-their work back in their repository, call `send_to_my_repo`: it goes to a separate line called "freckles" by default, so
-their main line is untouched, and they bring it in when they choose. Only add to their main line itself if they ask,
-with `confirm`.
+shows it and copies nothing, and their repository is never written to. They can choose to carry on in Freckles with it
+in two ways. On their Freckles page (Settings, "Your code on GitHub") they connect GitHub and press **Continue in
+Freckles** for a project: Freckles copies it itself, with its history in the timeline. Once it is there, or if they
+simply ask to work on an app Freckles keeps, call `get_my_app` (no name lists them; with a name and a folder it brings
+that one to this computer). Or, if the app is already on this computer and they want to carry on in Freckles, explain
+plainly that Freckles will keep its own private copy of the code, wait for their yes, and call `continue_in_freckles`.
+When they want their work back in their own repository, call `send_to_my_repo`: it goes to a separate line called
+"freckles" by default, so their main line is untouched, and they bring it in when they choose. Only add to their main
+line itself if they ask, with `confirm`.
 
 **Apps that already run in the person's own cloud** (their Azure): Freckles keeps the versions,
 pictures and ideas, but never deploys them and holds no key to that cloud. When they ask to put

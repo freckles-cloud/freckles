@@ -32703,7 +32703,7 @@ Apps others shared: list_shared_with_me shows them. To work on one with Can edit
 
 Selling: when an app needs to charge for something (a shop, a booking with a deposit, tickets, a class), never build a card form, never store card details and don't suggest another payment service. Call take_payments once (the person's own Stripe account: the money goes straight to them), then add_sale_item for each thing sold. It gives you a script tag and a button for the app's own page; the price is kept in Freckles, not in the page, and the customer pays on Stripe's page and comes back to the page. What was paid is in list_sales_orders; list_sales and change_sale_item show and change what is sold. Say plainly that Stripe charges the person its own fee on every payment and Freckles keeps 2% on the free plans, nothing on Pro. Nothing paid-for should unlock from the address the customer comes back to alone.
 
-An app the person already keeps in their own git repository is, by default, only shown by Freckles: nothing is copied and theirs is never written to. Only if they say they want to carry on in Freckles with it (timeline, ideas, pictures), explain that Freckles will keep its own private copy of the code, wait for their yes, then call continue_in_freckles (if it isn't on this computer, clone it first with their own git access, then open_app). When they want their work back there, call send_to_my_repo (a separate line called freckles by default; their main line only with confirm).
+An app the person already keeps in their own git repository is, by default, only shown by Freckles: nothing is copied and theirs is never written to. They can choose to carry on in Freckles: on their Freckles page (Settings) they connect GitHub and press Continue in Freckles for a project, and Freckles copies it itself; then call get_my_app to bring it to this computer (no name lists what Freckles keeps). Or, for an app already on this computer, explain that Freckles will keep its own private copy of the code, wait for their yes, then call continue_in_freckles. When they want their work back in their own project, call send_to_my_repo (a separate line called freckles by default; their main line only with confirm).
 
 An app that already runs in the person's own cloud (their Azure) is kept by Freckles (versions, pictures, ideas) but never deployed by it, and Freckles holds no key to that cloud: for putting it online or updating it there, do not call publish; use their own Azure sign-in on this computer (ask them to run az login once) with the Azure command line or the project's own deploy script or pipeline, and say that Freckles won't touch it.
 
@@ -32836,7 +32836,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.7.3" : "dev";
+var COMPANION_VERSION = true ? "0.7.4" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
@@ -34171,6 +34171,36 @@ async function openSharedApp(ref, folder, copy) {
     `For the agent: work in ${dir} as usual (set_preview if it has a screen). save_version saves on the idea "${idea}" and sends it to the owner, who hears about it through whats_new; never save on or publish the live app (publish is refused here). If the person wants an app of their own instead, call open_shared_app with copy: true in another folder.`
   ].join("\n");
 }
+async function getMyApp(name, folder) {
+  const c = await online();
+  const kept = (await api(c, "GET", "/api/v1/apps")).filter((a) => !a.repo.own);
+  if (!name) {
+    if (!kept.length) return "Freckles isn't keeping any app for this person yet. They make one with their assistant, or choose Continue in Freckles for a GitHub project on their Freckles page (Settings).";
+    const lines = kept.map((a) => `- ${a.name}${a.repo.copiedFrom ? ` (from ${a.repo.copiedFrom})` : ""}`);
+    return `Apps Freckles keeps for the person:
+${lines.join("\n")}
+
+For the agent: ask which one they want, and where on this computer to put it, then call get_my_app with both.`;
+  }
+  const want = name.trim().toLowerCase();
+  const matches = kept.filter((a) => a.id === name.trim() || a.name.toLowerCase() === want);
+  const app = matches.length === 1 ? matches[0] : kept.filter((a) => a.name.toLowerCase().startsWith(want)).length === 1 ? kept.find((a) => a.name.toLowerCase().startsWith(want)) : void 0;
+  if (!app) throw new Error(matches.length > 1 ? `More than one app is called "${name}". Use its short id from list_apps.` : `Freckles isn't keeping an app called "${name}". Call get_my_app with no name to see which it keeps.`);
+  if (!folder) throw new Error("Say where on this computer to put it.");
+  const key = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(app.id)}/git-token?access=read`);
+  const dir = await target(folder, app.name);
+  await git(process.cwd(), "-c", "credential.helper=", "clone", "--quiet", withKey(key.cloneUrl, key.token), dir);
+  await git(dir, "remote", "remove", "origin");
+  if (app.repo.copiedFrom) await git(dir, "remote", "add", "upstream", `https://github.com/${app.repo.copiedFrom}.git`);
+  const opened = await openApp(dir);
+  const saved = await sync(opened, { versions: 1 });
+  return [
+    `${app.name} is on this computer now, in ${dir}, with its whole history. Carry on from there: versions with a picture, ideas, going back, sharing.`,
+    saved,
+    "",
+    `For the agent: work in ${dir} as usual (set_preview if it has a screen, save_version after each step: its newest version has no picture yet, so the first save gives it one).${app.repo.copiedFrom ? ` It came from their GitHub project ${app.repo.copiedFrom}, which is never written to; send their work back only through send_to_my_repo, when they ask.` : ""}`
+  ].join("\n");
+}
 async function suggestChange(ref, text) {
   const c = await online();
   const { workspace, appId } = await findShared(c, ref);
@@ -34439,7 +34469,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.7.3" : "dev";
+var VERSION = true ? "0.7.4" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -35081,6 +35111,15 @@ tool(
   "Show in Freckles the apps the person already has in their own GitHub and Azure, read with the GitHub and Azure tools signed in on this computer. Read-only: nothing is copied, moved or changed, and those apps stay where they are. Connecting already does this once; call it again when the person says an app is missing.",
   {},
   async () => findMyApps()
+);
+tool(
+  "get_my_app",
+  "Get an app that Freckles keeps for the person onto this computer, with its whole history, so they can work on it here with their assistant. Works for apps they made with their assistant, and for GitHub projects they chose Continue in Freckles for on their Freckles page. Called with no name it lists what Freckles keeps; with a name and a folder it brings that one. If the project came from their GitHub, its address stays on the folder (no key) so send_to_my_repo knows where their work goes back to.",
+  {
+    name: external_exports.string().optional().describe("The app's name or short id, from the list this tool gives without it."),
+    folder: external_exports.string().optional().describe("Where to put it on this computer. An empty or new folder is used as is; otherwise a folder named after the app is made inside it.")
+  },
+  async ({ name, folder }) => getMyApp(name, folder)
 );
 tool(
   "continue_in_freckles",
