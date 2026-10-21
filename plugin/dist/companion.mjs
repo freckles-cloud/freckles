@@ -32387,6 +32387,34 @@ async function findAzureApps(token, fetchImpl = fetch) {
       return void 0;
     }
   };
+  const billByGroup = async (subscription) => {
+    try {
+      const res = await fetchImpl(`${ARM}/subscriptions/${subscription}/providers/Microsoft.CostManagement/query?api-version=2023-03-01`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({ type: "ActualCost", timeframe: "MonthToDate", dataset: { granularity: "None", aggregation: { total: { name: "Cost", function: "Sum" } }, grouping: [{ type: "Dimension", name: "ResourceGroupName" }] } }),
+        signal: AbortSignal.timeout(45e3)
+      });
+      if (!res.ok) return void 0;
+      const body = await res.json();
+      const cols = body.properties?.columns ?? [];
+      const at = (n) => cols.findIndex((c) => c.name.toLowerCase() === n);
+      const [iCost, iGroup, iCur] = [at("cost") >= 0 ? at("cost") : 0, at("resourcegroupname"), at("currency")];
+      if (iGroup < 0) return void 0;
+      const byGroup = /* @__PURE__ */ new Map();
+      let currency;
+      for (const row of body.properties?.rows ?? []) {
+        const cost = Number(row[iCost]);
+        if (!Number.isFinite(cost)) continue;
+        const g = String(row[iGroup] ?? "").toLowerCase();
+        byGroup.set(g, (byGroup.get(g) ?? 0) + cost * 100);
+        currency ??= iCur >= 0 && row[iCur] ? String(row[iCur]) : void 0;
+      }
+      return { byGroup, currency };
+    } catch {
+      return void 0;
+    }
+  };
   const all = async (path2) => {
     const out = [];
     let next = path2;
@@ -32405,11 +32433,12 @@ async function findAzureApps(token, fetchImpl = fetch) {
   await Promise.all(
     mine.map(async (sub) => {
       const base = `/subscriptions/${sub.subscriptionId}`;
-      const [sites, webs, containers, resources] = await Promise.all([
+      const [sites, webs, containers, resources, bill] = await Promise.all([
         all(`${base}/providers/Microsoft.Web/staticSites?api-version=2022-03-01`),
         all(`${base}/providers/Microsoft.Web/sites?api-version=2022-03-01`),
         all(`${base}/providers/Microsoft.App/containerApps?api-version=2023-05-01`),
-        all(`${base}/resources?api-version=2021-04-01`)
+        all(`${base}/resources?api-version=2021-04-01`),
+        billByGroup(sub.subscriptionId)
       ]);
       if (!sites && !webs && !containers) {
         unreadable++;
@@ -32456,7 +32485,9 @@ async function findAzureApps(token, fetchImpl = fetch) {
             subscription: sub.displayName,
             group,
             fromRepo,
-            linkedBy: "Found in your Microsoft account."
+            linkedBy: "Found in your Microsoft account.",
+            // What the bill says everything in its group has cost this month. A group the bill doesn't list has cost nothing so far.
+            ...bill ? { costMinor: bill.byGroup.get(group.toLowerCase()) ?? 0, ...bill.currency ? { currency: bill.currency } : {} } : {}
           },
           alongside: others.length ? others.map((x) => ({ kind: ALONGSIDE_KIND[x.type.toLowerCase()] ?? "other", name: x.name, type: x.type })) : void 0
         });
@@ -32672,6 +32703,8 @@ Apps others shared: list_shared_with_me shows them. To work on one with Can edit
 
 Selling: when an app needs to charge for something (a shop, a booking with a deposit, tickets, a class), never build a card form, never store card details and don't suggest another payment service. Call take_payments once (the person's own Stripe account: the money goes straight to them), then add_sale_item for each thing sold. It gives you a script tag and a button for the app's own page; the price is kept in Freckles, not in the page, and the customer pays on Stripe's page and comes back to the page. What was paid is in list_sales_orders; list_sales and change_sale_item show and change what is sold. Say plainly that Stripe charges the person its own fee on every payment and Freckles keeps 2% on the free plans, nothing on Pro. Nothing paid-for should unlock from the address the customer comes back to alone.
 
+An app that already runs in the person's own cloud (their Azure) is kept by Freckles (versions, pictures, ideas) but never deployed by it, and Freckles holds no key to that cloud: for putting it online or updating it there, do not call publish; use their own Azure sign-in on this computer (ask them to run az login once) with the Azure command line or the project's own deploy script or pipeline, and say that Freckles won't touch it.
+
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
 
 Updating Freckles itself: when whats_new says the plugin is out of date, offer to run it for them. In Claude Code: \`claude plugin marketplace update freckles\` then \`claude plugin update freckles@freckles\`; then they restart the agent. For the Windows dot next to the clock, call install_menu_dot when they ask.
@@ -32801,7 +32834,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.7.0" : "dev";
+var COMPANION_VERSION = true ? "0.7.1" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
@@ -33278,7 +33311,7 @@ async function findMyApps(options = {}) {
   const c = await readConfig();
   if (!c.token) throw new NotConnected();
   const found = await findExisting();
-  if (!found.github && !found.azure.length) return options.quiet ? "" : "Nothing else was found on this computer to show (no GitHub or Azure sign-in). That's fine: Freckles keeps new apps itself. The person can also look for apps from their Freckles page, under Advanced connections.";
+  if (!found.github && !found.azure.length) return options.quiet ? "" : "Nothing else was found on this computer to show (no GitHub or Azure sign-in). That's fine: Freckles keeps new apps itself. The person can also look for apps from their Freckles page, in Settings, under \u201CWhere your apps run\u201D.";
   const sent = await api(c, "PUT", "/api/v1/existing", found);
   if (sent?.githubOff) {
     const sites = found.apps.filter((a) => a.site);
@@ -33298,7 +33331,7 @@ function describeFound(found) {
   if (noHome.length && !found.azure.length) lines.push(`No cloud account is signed in on this computer, so Freckles couldn't see where ${noHome.length === 1 ? `${noHome[0].name} runs` : "these apps run"}.`);
   else if (noHome.length) lines.push(`${noHome.length === 1 ? `${noHome[0].name} wasn't found running` : `${noHome.length} apps weren't found running`} in the cloud account(s) this computer is signed in to (${found.azure.join(", ")}${found.azureAccount ? `, as ${found.azureAccount}` : ""}).`);
   if (found.unreadable || noHome.length)
-    lines.push("Tell the person: if some of their apps run in a different account than the ones above, Freckles can map them more accurately once that connection is added, under Advanced connections in the menu on their Freckles page (or by signing in to that account on this computer and calling find_my_apps again).");
+    lines.push("Tell the person: if some of their apps run in a different account than the ones above, Freckles can map them more accurately once that connection is added, in Settings on their Freckles page, under \u201CWhere your apps run\u201D (or by signing in to that account on this computer and calling find_my_apps again).");
   return lines.join(" ");
 }
 async function whatsNew(appId) {
@@ -34084,7 +34117,7 @@ async function bringInRepo(repo, folder) {
   const list3 = await api(c, "GET", "/api/v1/connected");
   if (!list3.available) return "Giving Freckles access to a repository isn't set up on this copy of Freckles yet, so there is nothing to bring in. The apps in the person's own GitHub are still shown in their list.";
   if (!repo) {
-    if (!list3.repos.length) return `The person hasn't given Freckles access to any repository yet. They do it on their Freckles page: Settings, Hosting, Advanced connections, "Give Freckles access to a repository". GitHub asks them which ones, and Freckles can then only read them.`;
+    if (!list3.repos.length) return `The person hasn't given Freckles access to any repository yet. They do it on their Freckles page: Settings, Where your apps run, "Connect my GitHub". GitHub asks them which ones, and Freckles can then only read them.`;
     const lines = list3.repos.map((r2) => `- ${r2.fullName}${r2.private ? " (private)" : ""}${r2.description ? `: ${r2.description}` : ""}`);
     return `Repositories the person gave Freckles access to:
 ${lines.join("\n")}
@@ -34374,7 +34407,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.7.0" : "dev";
+var VERSION = true ? "0.7.1" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -34992,7 +35025,7 @@ tool(
 );
 tool(
   "bring_in_repo",
-  "Bring in an app the person already has on GitHub and gave Freckles access to (Settings, Hosting, Advanced connections), so it works like any of their apps: versions with pictures, ideas, going back, publishing. Freckles can only read the original and never changes it. Called with no repo it lists what they gave access to; with a repo and a folder it brings that one in. Use it for someone who has never used GitHub or code tools and was handed a project, instead of asking them to download anything.",
+  "Bring in an app the person already has on GitHub and gave Freckles access to (Settings, Where your apps run), so it works like any of their apps: versions with pictures, ideas, going back, publishing. Freckles can only read the original and never changes it. Called with no repo it lists what they gave access to; with a repo and a folder it brings that one in. Use it for someone who has never used GitHub or code tools and was handed a project, instead of asking them to download anything.",
   {
     repo: external_exports.string().optional().describe('The project as "owner/name", from the list this tool gives without it.'),
     folder: external_exports.string().optional().describe("Where to put it on this computer. An empty or new folder is used as is; otherwise a folder named after the app is made inside it.")

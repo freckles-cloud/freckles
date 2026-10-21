@@ -32,6 +32,13 @@ ask them to restart. `install_menu_dot` puts the status dot next to the clock on
 When the person says an app they already have is missing from Freckles, call `find_my_apps`. It
 shows their existing GitHub and Azure apps where they are, and never copies or publishes them.
 
+**Apps that already run in the person's own cloud** (their Azure): Freckles keeps the versions,
+pictures and ideas, but never deploys them and holds no key to that cloud. When they ask to put
+such an app online, or to update it there, do not call `publish`. Deploy the way they already do:
+with their own Azure sign-in on this computer (`az login`, then the Azure command line, or the
+project's own deploy script or pipeline). If they aren't signed in, ask them to run `az login`
+once. Say plainly that Freckles will not touch it. Keep saving versions as usual.
+
 ## After every finished step
 
 Call `save_version` as soon as a step works, with a one-line summary of **what the app does
