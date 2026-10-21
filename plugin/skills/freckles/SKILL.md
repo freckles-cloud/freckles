@@ -32,6 +32,13 @@ ask them to restart. `install_menu_dot` puts the status dot next to the clock on
 When the person says an app they already have is missing from Freckles, call `find_my_apps`. It
 shows their existing GitHub and Azure apps where they are, and never copies or publishes them.
 
+**An app the person already keeps in their own git repository** (on GitHub or elsewhere): there is nothing to connect.
+If they don't have it on this computer yet, get it with their own git access (`git clone`, using their usual sign-in),
+then `open_app` on the folder. Freckles keeps its own private copy of the whole history, so they get the timeline, ideas
+and a picture of every version, and carries on from there; their repository is never written to. When they want their work
+back in their repository, call `send_to_my_repo`: it goes to a separate line called "freckles" by default, so their main
+line is untouched, and they bring it in when they choose. Only add to their main line itself if they ask, with `confirm`.
+
 **Apps that already run in the person's own cloud** (their Azure): Freckles keeps the versions,
 pictures and ideas, but never deploys them and holds no key to that cloud. When they ask to put
 such an app online, or to update it there, do not call `publish`. Deploy the way they already do:

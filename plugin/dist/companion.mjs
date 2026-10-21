@@ -32703,6 +32703,8 @@ Apps others shared: list_shared_with_me shows them. To work on one with Can edit
 
 Selling: when an app needs to charge for something (a shop, a booking with a deposit, tickets, a class), never build a card form, never store card details and don't suggest another payment service. Call take_payments once (the person's own Stripe account: the money goes straight to them), then add_sale_item for each thing sold. It gives you a script tag and a button for the app's own page; the price is kept in Freckles, not in the page, and the customer pays on Stripe's page and comes back to the page. What was paid is in list_sales_orders; list_sales and change_sale_item show and change what is sold. Say plainly that Stripe charges the person its own fee on every payment and Freckles keeps 2% on the free plans, nothing on Pro. Nothing paid-for should unlock from the address the customer comes back to alone.
 
+An app the person already keeps in their own git repository needs no connection: if it isn't on this computer, clone it with their own git access, then open_app on the folder; Freckles keeps its own private copy (timeline, ideas, pictures) and never writes to theirs. When they want their work back there, call send_to_my_repo (a separate line called freckles by default; their main line only with confirm).
+
 An app that already runs in the person's own cloud (their Azure) is kept by Freckles (versions, pictures, ideas) but never deployed by it, and Freckles holds no key to that cloud: for putting it online or updating it there, do not call publish; use their own Azure sign-in on this computer (ask them to run az login once) with the Azure command line or the project's own deploy script or pipeline, and say that Freckles won't touch it.
 
 Leaving is always possible: take_it_with_you (their own GitHub), move_to_my_azure (their own Azure; say first if it adds cost), export_app (everything in one file).
@@ -32834,7 +32836,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.7.1" : "dev";
+var COMPANION_VERSION = true ? "0.7.2" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
@@ -32979,11 +32981,9 @@ async function ensureRegistered(c, app) {
   if (side?.cloud) return side.cloud;
   const remote = await remoteUrl(app.path);
   const name = remote?.match(/[/:]([^/:]+?)(?:\.git)?$/)?.[1] ?? basename3(app.path);
-  const fullName = remote?.match(/[/:]([^/:]+\/[^/:]+?)(?:\.git)?$/)?.[1];
   const record2 = await api(c, "POST", "/api/v1/apps", {
     name,
-    rootSha: await rootSha(app.path),
-    ownRepo: remote && fullName ? { fullName, url: remote } : void 0
+    rootSha: await rootSha(app.path)
   });
   const cloud = { appId: record2.id, repo: record2.repo.fullName, own: !!record2.repo.own };
   await updateSide(app.id, (s) => ({ ...s, cloud }));
@@ -33603,6 +33603,48 @@ async function takeItWithYou(app, to) {
   const recorded = await handOver(app, { fullName, url: url2 }).catch(() => false);
   return `${appName(app)}'s whole history, with every idea, is now in ${fullName}, your own repository. It's yours whatever happens to Freckles.${recorded ? " Freckles has archived its own copy and keeps showing the app." : ""}`;
 }
+var MAIN_LINES = /* @__PURE__ */ new Set(["main", "master", "trunk", "develop", "development", "production", "prod"]);
+async function theirRepo(app, to) {
+  let url2 = to?.trim();
+  if (url2) url2 = /^(https?:\/\/|git@|ssh:\/\/|file:\/\/|\/)/.test(url2) ? url2 : `https://github.com/${url2.replace(/^\/+|\/+$/g, "")}.git`;
+  else {
+    for (const remote of ["upstream", "origin"]) {
+      url2 = await git(app.path, "remote", "get-url", remote).then((u2) => u2.trim(), () => void 0);
+      if (url2) break;
+    }
+  }
+  if (!url2) throw new Error('Which repository should it go back to? Give its address, like "ana/booking-page" or a full git address.');
+  if (/\/freckles-cloud\//i.test(url2)) throw new Error("That is Freckles' own copy, not the person's repository. Give the address of their own.");
+  return { url: url2, fullName: url2.match(/[/:]([^/:]+\/[^/:]+?)(?:\.git)?$/)?.[1] ?? url2 };
+}
+async function sendToMyRepo(app, o) {
+  const target2 = await theirRepo(app, o.to);
+  const branch = (o.branch ?? "freckles").trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,79}$/.test(branch) || branch.includes("..") || branch.endsWith("/") || branch.endsWith(".lock")) {
+    throw new Error(`"${branch}" can't be used as a branch name. Use letters, numbers, dots, dashes or slashes, like "freckles".`);
+  }
+  const direct = MAIN_LINES.has(branch.toLowerCase());
+  if (direct && !o.confirm) {
+    const e = new Error(`That would add Freckles' versions to the main line of ${target2.fullName}. Ask the person first.`);
+    e.agent = `Sending to "${branch}" changes the main line of the person's repository. By default Freckles sends to a separate branch called "freckles", which changes nothing there; offer that first. Only if they say they want it on ${branch} itself, call send_to_my_repo again with branch "${branch}" and confirm: true. It still won't go through unless it simply continues what is already there.`;
+    throw e;
+  }
+  try {
+    await git(app.path, "push", target2.url, `${app.liveBranch}:refs/heads/${branch}`);
+  } catch (err) {
+    const behind = /non-fast-forward|fetch first|rejected|stale info/i.test(err instanceof Error ? err.message : String(err));
+    const e = new Error(
+      behind ? `${target2.fullName} has changes Freckles doesn't have, so the versions can't go straight onto ${branch}. Send them to a branch of their own instead: nothing there is overwritten.` : `The versions couldn't be sent to ${target2.fullName}. Check that this computer can reach it with the person's own git sign-in.`
+    );
+    e.agent = `git push to ${target2.url} (${app.liveBranch} -> ${branch}) failed: ${err instanceof Error ? err.message : err}. ${behind ? `Offer branch "freckles" (the default), or let them bring their repository's newer changes in first.` : "Ask them to check access to the repository (their usual git sign-in, SSH key or token), then try again."}`;
+    throw e;
+  }
+  const count = await git(app.path, "rev-list", "--count", app.liveBranch).then((n) => n.trim(), () => "");
+  return [
+    `Sent: ${target2.fullName} now has ${count ? `all ${count} versions` : "every version"} from Freckles, ${direct ? `on its ${branch} line` : `on a separate line called ${branch}`}.${direct ? "" : " Your main line is exactly as it was."}`,
+    direct ? "" : `Open it on GitHub when you're ready to bring them in, or ask me to. Freckles keeps going as before.`
+  ].filter(Boolean).join(" ");
+}
 function readme(app, versions, published) {
   const lines = [
     `# ${appName(app)}: everything Freckles kept`,
@@ -34112,33 +34154,6 @@ async function openSharedApp(ref, folder, copy) {
     `For the agent: work in ${dir} as usual (set_preview if it has a screen). save_version saves on the idea "${idea}" and sends it to the owner, who hears about it through whats_new; never save on or publish the live app (publish is refused here). If the person wants an app of their own instead, call open_shared_app with copy: true in another folder.`
   ].join("\n");
 }
-async function bringInRepo(repo, folder) {
-  const c = await online();
-  const list3 = await api(c, "GET", "/api/v1/connected");
-  if (!list3.available) return "Giving Freckles access to a repository isn't set up on this copy of Freckles yet, so there is nothing to bring in. The apps in the person's own GitHub are still shown in their list.";
-  if (!repo) {
-    if (!list3.repos.length) return `The person hasn't given Freckles access to any repository yet. They do it on their Freckles page: Settings, Where your apps run, "Connect my GitHub". GitHub asks them which ones, and Freckles can then only read them.`;
-    const lines = list3.repos.map((r2) => `- ${r2.fullName}${r2.private ? " (private)" : ""}${r2.description ? `: ${r2.description}` : ""}`);
-    return `Repositories the person gave Freckles access to:
-${lines.join("\n")}
-
-For the agent: ask which one they want, and where on this computer to put it, then call bring_in_repo with both.`;
-  }
-  if (!folder) throw new Error("Say where on this computer to put it.");
-  const key = await api(c, "POST", "/api/v1/connected/git", { repo });
-  const dir = await target(folder, key.name);
-  await git(process.cwd(), "-c", "credential.helper=", "clone", "--quiet", withKey(key.cloneUrl, key.token), dir);
-  await git(dir, "remote", "rename", "origin", "upstream");
-  await git(dir, "remote", "set-url", "upstream", key.cloneUrl);
-  const app = await openApp(dir);
-  const saved = await sync(app, { versions: 1 });
-  return [
-    `Brought ${key.name} in to ${dir}. It's one of the person's apps now, with its whole history. Nothing in GitHub was changed, and Freckles can only read it.`,
-    saved,
-    "",
-    `For the agent: work in ${dir} as usual (set_preview if it has a screen, save_version after each step, publish when they ask). The original lives on as the folder's "upstream" and is never written to. Don't say git, clone or repository to the person: say "brought in" and "your app".`
-  ].join("\n");
-}
 async function suggestChange(ref, text) {
   const c = await online();
   const { workspace, appId } = await findShared(c, ref);
@@ -34407,7 +34422,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.7.1" : "dev";
+var VERSION = true ? "0.7.2" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -35024,15 +35039,6 @@ tool(
   async ({ app, folder, copy }) => openSharedApp(app, folder, copy === true)
 );
 tool(
-  "bring_in_repo",
-  "Bring in an app the person already has on GitHub and gave Freckles access to (Settings, Where your apps run), so it works like any of their apps: versions with pictures, ideas, going back, publishing. Freckles can only read the original and never changes it. Called with no repo it lists what they gave access to; with a repo and a folder it brings that one in. Use it for someone who has never used GitHub or code tools and was handed a project, instead of asking them to download anything.",
-  {
-    repo: external_exports.string().optional().describe('The project as "owner/name", from the list this tool gives without it.'),
-    folder: external_exports.string().optional().describe("Where to put it on this computer. An empty or new folder is used as is; otherwise a folder named after the app is made inside it.")
-  },
-  async ({ repo, folder }) => bringInRepo(repo, folder)
-);
-tool(
   "update_my_version",
   "Bring the owner's latest into the version of a shared app this person is changing (opened with open_shared_app), when Freckles says their proposed change is out of date because the owner changed the app after they started. Their changes stay on top. If both changed the same thing, the clash is left in the files for you to settle, then save_version sends it again.",
   { app: appRef },
@@ -35058,6 +35064,17 @@ tool(
   "Show in Freckles the apps the person already has in their own GitHub and Azure, read with the GitHub and Azure tools signed in on this computer. Read-only: nothing is copied, moved or changed, and those apps stay where they are. Connecting already does this once; call it again when the person says an app is missing.",
   {},
   async () => findMyApps()
+);
+tool(
+  "send_to_my_repo",
+  `Send the app's versions from Freckles back to the person's own place on GitHub (the project they brought it from, or one they name), using their own GitHub sign-in on this computer. Freckles keeps its own copy and keeps going. Nothing is ever forced or overwritten. By default the versions go to a separate line called "freckles", so their main line stays exactly as it was; putting them on the main line itself needs the person's say-so (confirm: true) and only works when it simply continues what is there. Only when the person asks to send, or pass, their work back to GitHub.`,
+  {
+    app: appRef,
+    to: external_exports.string().optional().describe('Their repository, as "owner/name" or a full git address. Defaults to the one the app was brought from.'),
+    branch: external_exports.string().optional().describe('The branch to send to. Defaults to "freckles", which changes nothing in their main line.'),
+    confirm: external_exports.boolean().optional().describe("True only after the person agreed to add to their main line itself.")
+  },
+  async ({ app: ref, to, branch, confirm }) => sendToMyRepo(await resolveApp(ref), { to, branch, confirm })
 );
 tool(
   "take_it_with_you",
