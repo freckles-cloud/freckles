@@ -32703,7 +32703,7 @@ Apps others shared: list_shared_with_me shows them. To work on one with Can edit
 
 Selling: when an app needs to charge for something (a shop, a booking with a deposit, tickets, a class), never build a card form, never store card details and don't suggest another payment service. Call take_payments once (the person's own Stripe account: the money goes straight to them), then add_sale_item for each thing sold. It gives you a script tag and a button for the app's own page; the price is kept in Freckles, not in the page, and the customer pays on Stripe's page and comes back to the page. What was paid is in list_sales_orders; list_sales and change_sale_item show and change what is sold. Say plainly that Stripe charges the person its own fee on every payment and Freckles keeps 2% on the free plans, nothing on Pro. Nothing paid-for should unlock from the address the customer comes back to alone.
 
-An app the person already keeps in their own git repository needs no connection: if it isn't on this computer, clone it with their own git access, then open_app on the folder; Freckles keeps its own private copy (timeline, ideas, pictures) and never writes to theirs. When they want their work back there, call send_to_my_repo (a separate line called freckles by default; their main line only with confirm).
+An app the person already keeps in their own git repository is, by default, only shown by Freckles: nothing is copied and theirs is never written to. Only if they say they want to carry on in Freckles with it (timeline, ideas, pictures), explain that Freckles will keep its own private copy of the code, wait for their yes, then call continue_in_freckles (if it isn't on this computer, clone it first with their own git access, then open_app). When they want their work back there, call send_to_my_repo (a separate line called freckles by default; their main line only with confirm).
 
 An app that already runs in the person's own cloud (their Azure) is kept by Freckles (versions, pictures, ideas) but never deployed by it, and Freckles holds no key to that cloud: for putting it online or updating it there, do not call publish; use their own Azure sign-in on this computer (ask them to run az login once) with the Azure command line or the project's own deploy script or pipeline, and say that Freckles won't touch it.
 
@@ -32836,7 +32836,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.7.2" : "dev";
+var COMPANION_VERSION = true ? "0.7.3" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
@@ -32981,9 +32981,11 @@ async function ensureRegistered(c, app) {
   if (side?.cloud) return side.cloud;
   const remote = await remoteUrl(app.path);
   const name = remote?.match(/[/:]([^/:]+?)(?:\.git)?$/)?.[1] ?? basename3(app.path);
+  const fullName = remote?.match(/[/:]([^/:]+\/[^/:]+?)(?:\.git)?$/)?.[1];
   const record2 = await api(c, "POST", "/api/v1/apps", {
     name,
-    rootSha: await rootSha(app.path)
+    rootSha: await rootSha(app.path),
+    ownRepo: remote && fullName ? { fullName, url: remote } : void 0
   });
   const cloud = { appId: record2.id, repo: record2.repo.fullName, own: !!record2.repo.own };
   await updateSide(app.id, (s) => ({ ...s, cloud }));
@@ -33100,6 +33102,21 @@ async function nameMilestone(app, n, name) {
 async function appPath(app) {
   const id = (await readSide(app.id))?.cloud?.appId;
   return id ? `/apps/${encodeURIComponent(id)}` : void 0;
+}
+async function continueInFreckles(app) {
+  const c = await readConfig();
+  if (!c.token) throw new Error("Freckles online isn't connected on this computer yet. Call connect_freckles first.");
+  const first = await ensureRegistered(c, app);
+  if (!first.own) return `${appName(app)} is already kept in Freckles, with its whole history. Nothing to do.`;
+  const kept = await api(c, "POST", `/api/v1/apps/${encodeURIComponent(first.appId)}/keep`);
+  await updateSide(app.id, (s) => ({ ...s, cloud: { appId: kept.id, repo: kept.repo.fullName, own: false } }));
+  const saved = await sync(app, { versions: 1 });
+  return [
+    `${appName(app)} is now kept in Freckles, with its whole history, and you can carry on from here: versions with a picture, ideas, going back, sharing. Your own copy on GitHub wasn't touched.`,
+    saved,
+    "",
+    "For the agent: the folder's own remote is unchanged, and Freckles never writes to it. To pass their work back to it later, call send_to_my_repo (a separate line called freckles by default) when they ask."
+  ].join("\n");
 }
 async function sync(app, options = {}) {
   const c = await readConfig();
@@ -34422,7 +34439,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.7.2" : "dev";
+var VERSION = true ? "0.7.3" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -35064,6 +35081,12 @@ tool(
   "Show in Freckles the apps the person already has in their own GitHub and Azure, read with the GitHub and Azure tools signed in on this computer. Read-only: nothing is copied, moved or changed, and those apps stay where they are. Connecting already does this once; call it again when the person says an app is missing.",
   {},
   async () => findMyApps()
+);
+tool(
+  "continue_in_freckles",
+  "Only when the person says they want to carry on working in Freckles with an app they already keep on GitHub (or in their own place). Freckles then keeps its own private copy of the app's code and whole history, so it gets the timeline, ideas and a picture of every version, and they continue from there. Their own project is never written to, and without this call Freckles only shows such an app and copies nothing. Say plainly what it does and wait for their yes before calling it.",
+  { app: appRef },
+  async ({ app: ref }) => continueInFreckles(await resolveApp(ref))
 );
 tool(
   "send_to_my_repo",
