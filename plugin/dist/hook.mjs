@@ -193,7 +193,7 @@ var MAC_AGENT = join2(homedir2(), "Library", "LaunchAgents", "com.frecklescloud.
 var WIN_STARTUP = join2(process.env.APPDATA ?? "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Freckles Menu.lnk");
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.7.4" : "dev";
+var COMPANION_VERSION = true ? "0.8.0" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();

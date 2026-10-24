@@ -30964,6 +30964,11 @@ async function loadApp(id) {
   if (!side?.path) throw new Error(`app ${id} is not open on this machine`);
   return toApp(id, side);
 }
+async function setGoal(app, goal) {
+  const clean2 = goal.replace(/\s+/g, " ").trim().slice(0, 300) || void 0;
+  await updateSide(app.id, (side) => ({ ...side, goal: clean2 }));
+  return clean2;
+}
 async function setPreview(app, preview) {
   const side = await updateSide(app.id, (current) => ({ ...current, preview }));
   return toApp(app.id, side);
@@ -30976,7 +30981,8 @@ function toApp(id, side) {
     liveBranch: side.liveBranch,
     workspace: side.workspace,
     preview: side.preview,
-    published: side.published
+    published: side.published,
+    goal: side.goal
   };
 }
 
@@ -30998,6 +31004,7 @@ async function toVersion(app, record2, live) {
     author,
     shot: extra.shot,
     shotSkipped: extra.shotSkipped,
+    change: extra.change,
     isLive: id === live,
     inPlainLanguage: extra.plain === true,
     originalSummary: rewritten ? summary : void 0
@@ -31083,6 +31090,12 @@ async function describeVersion(app, versionId, words) {
   if (!updated) throw new Error("the description was saved but could not be read back");
   return updated;
 }
+async function attachChange(app, versionId, change) {
+  await updateSide(app.id, (side) => ({
+    ...side,
+    versions: { ...side.versions, [versionId]: { ...side.versions[versionId], change } }
+  }));
+}
 async function attachShot(app, versionId, shot) {
   await updateSide(app.id, (side) => ({
     ...side,
@@ -31119,7 +31132,7 @@ async function startIdea(app, name) {
     throw new Error("there are unsaved changes \u2014 save a version before trying an idea");
   }
   await git(app.path, "checkout", "-b", branch, app.liveBranch);
-  return { name: toName(branch), branch, isOpen: true, versionsAhead: 0 };
+  return { name: toName(branch), branch, isOpen: true, versionsAhead: 0, from: await forkPoint(app, branch) };
 }
 async function markPlain(app, id) {
   await updateSide(app.id, (side) => ({
@@ -31157,10 +31170,25 @@ async function listIdeas(app) {
       name: toName(branch),
       branch,
       isOpen: head === "*",
-      versionsAhead: Number(ahead)
+      versionsAhead: Number(ahead),
+      from: await forkPoint(app, branch)
     });
   }
   return ideas;
+}
+async function forkPoint(app, branch) {
+  const base = await git(app.path, "merge-base", app.liveBranch, branch).catch(() => "");
+  return base ? Number(await git(app.path, "rev-list", "--count", base).catch(() => "0")) : 0;
+}
+async function currentIdea(app) {
+  const here = await currentBranch(app.path).catch(() => "");
+  if (!here.startsWith(PREFIX)) return void 0;
+  return (await listIdeas(app)).find((i) => i.branch === here);
+}
+async function ideaVersions(app, idea) {
+  const out = await git(app.path, "rev-list", "--reverse", `${app.liveBranch}..${idea.branch}`);
+  const versions = await Promise.all(out.split("\n").filter(Boolean).map((id) => getVersion(app, id)));
+  return versions.filter((v2) => !!v2);
 }
 async function keepIdea(app, name) {
   const branch = toBranch(name);
@@ -31172,6 +31200,8 @@ async function keepIdea(app, name) {
   try {
     await git(app.path, "merge", "--no-ff", "-m", `Kept the idea "${toName(branch)}"`, branch);
     await markPlain(app, await headSha(app.path));
+    await git(app.path, "branch", "-d", branch).catch(() => {
+    });
     return { kept: true, clashes: [] };
   } catch (err) {
     if (!(err instanceof GitError)) throw err;
@@ -31509,6 +31539,175 @@ function readLayoutInPage() {
   return { page: { path: location.pathname + location.search, title: document.title }, size: { w: W, h: H2 }, parts };
 }
 
+// packages/shots/src/change.ts
+var PAGE_FILES = /\.(html?|jsx|tsx|vue|svelte|astro|md|mdx|njk|liquid|hbs|php)$/i;
+var SOURCE_DIRS = /^(?:public|static|dist|build|docs|site|www|src)\//i;
+function pageForFile(file3) {
+  const f2 = file3.replace(/\\/g, "/");
+  const app = f2.match(/(?:^|\/)app\/(.*?)\/?page\.(?:tsx|jsx|js|ts|mdx)$/);
+  if (app) return routePath(app[1] ?? "");
+  const kit = f2.match(/(?:^|\/)routes\/(.*?)\/?\+page\.svelte$/);
+  if (kit) return routePath(kit[1] ?? "");
+  const pages = f2.match(/(?:^|\/)pages\/(.+)\.(?:astro|tsx|jsx|vue|mdx?|html?)$/);
+  if (pages && !pages[1].startsWith("api/") && !pages[1].startsWith("_")) return routePath(pages[1].replace(/(?:^|\/)index$/, ""));
+  if (/\.html?$/i.test(f2)) {
+    const rest = f2.replace(SOURCE_DIRS, "");
+    if (/(?:^|\/)index\.html?$/i.test(rest)) return `/${rest.replace(/index\.html?$/i, "")}`;
+    return `/${rest}`;
+  }
+  return void 0;
+}
+function routePath(route) {
+  const parts = route.split("/").filter((p2) => p2 && !/^\(.*\)$/.test(p2));
+  if (parts.some((p2) => /[[\]]/.test(p2))) return void 0;
+  return `/${parts.join("/")}`;
+}
+function pageForFiles(files) {
+  const count = /* @__PURE__ */ new Map();
+  for (const f2 of files) {
+    const p2 = pageForFile(f2);
+    if (p2) count.set(p2, (count.get(p2) ?? 0) + 1);
+  }
+  return [...count.entries()].sort((a, b) => Number(b[0] !== "/") - Number(a[0] !== "/") || b[1] - a[1])[0]?.[0];
+}
+var ENTITIES = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " ", "&rsquo;": "\u2019", "&lsquo;": "\u2018", "&ndash;": "\u2013", "&mdash;": "\u2014" };
+function wordsIn(text, texts, selectors) {
+  for (const m2 of text.matchAll(/\bid=["']([A-Za-z][\w-]{1,40})["']/g)) selectors.add(`#${m2[1]}`);
+  for (const m2 of text.matchAll(/\b(?:alt|placeholder|aria-label|title|value)=["']([^"'{}<>]{3,80})["']/g)) texts.add(clean(m2[1]));
+  const visible = text.replace(/<!--.*?-->/g, " ").replace(/\{[^}]*\}/g, " ").replace(/<[^>]*>?/g, "\0").replace(/&[#\w]+;/g, (e) => ENTITIES[e] ?? " ");
+  for (const piece of visible.split("\0")) {
+    const t = clean(piece);
+    if (t.length >= 3 && /[\p{L}]{2,}/u.test(t) && !/^[\w.-]+\s*[:=]\s*\S/.test(t) && !/[;{}]\s*$|=>/.test(t)) texts.add(t);
+  }
+}
+function addedTargets(diff) {
+  const added = { texts: /* @__PURE__ */ new Set(), selectors: /* @__PURE__ */ new Set() };
+  const removed = { texts: /* @__PURE__ */ new Set(), selectors: /* @__PURE__ */ new Set() };
+  let inPageFile = false;
+  let raw = false;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++ ") || line.startsWith("--- ")) {
+      if (line.startsWith("+++ ")) inPageFile = PAGE_FILES.test(line.slice(4).trim());
+      raw = false;
+      continue;
+    }
+    if (!inPageFile || !(line.startsWith("+") || line.startsWith("-"))) continue;
+    const into = line.startsWith("+") ? added : removed;
+    let text = line.slice(1);
+    if (raw) {
+      if (!/<\/(?:script|style)>/i.test(text)) continue;
+      raw = false;
+      text = text.replace(/^.*?<\/(?:script|style)>/i, "");
+    }
+    text = text.replace(/<(script|style)\b[^>]*>.*?<\/\1>/gis, " ");
+    if (/<(?:script|style)\b[^>]*>/i.test(text)) {
+      raw = true;
+      text = text.replace(/<(?:script|style)\b[^>]*>.*$/i, " ");
+    }
+    wordsIn(text, into.texts, into.selectors);
+  }
+  const byLength = (a, b) => b.length - a.length;
+  return {
+    texts: [...added.texts].filter((t) => !removed.texts.has(t)).sort(byLength).slice(0, 8),
+    selectors: [...added.selectors].filter((x) => !removed.selectors.has(x)).slice(0, 6)
+  };
+}
+function clean(s) {
+  return s.replace(/\s+/g, " ").trim();
+}
+function targetsFromHint(highlight) {
+  const h2 = highlight?.trim();
+  if (!h2) return void 0;
+  const selector = /^[#.[]/.test(h2) || /^[a-z][a-z0-9-]*[#.[][^\s]*(\s*[>+~]?\s*[#.[a-z][^\s]*)*$/i.test(h2) || /\S\s*>\s*\S/.test(h2);
+  return selector ? { texts: [], selectors: [h2] } : { texts: [h2], selectors: [] };
+}
+function outlineInPage(args) {
+  const norm = (s) => (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  const seen = /* @__PURE__ */ new Set();
+  const found = [];
+  const visible = (el) => {
+    const r2 = el.getBoundingClientRect();
+    if (r2.width < 4 || r2.height < 4) return false;
+    const st = getComputedStyle(el);
+    return st.visibility !== "hidden" && st.display !== "none" && Number(st.opacity) !== 0;
+  };
+  const take = (el) => {
+    if (seen.has(el) || !visible(el)) return;
+    seen.add(el);
+    found.push(el);
+  };
+  for (const sel of args.selectors) {
+    try {
+      document.querySelectorAll(sel).forEach(take);
+    } catch {
+    }
+  }
+  const all = [...document.body.querySelectorAll("*")].filter((el) => !["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"].includes(el.tagName));
+  for (const needle of args.texts.map(norm).filter(Boolean)) {
+    const hits = all.filter((el) => {
+      const own = norm(el.textContent);
+      const attrs = [el.getAttribute("alt"), el.getAttribute("placeholder"), el.getAttribute("aria-label"), el.getAttribute("title"), el.value].map(norm);
+      return own.includes(needle) || attrs.some((a) => a.includes(needle));
+    });
+    const smallest = hits.filter((el) => !hits.some((o) => o !== el && el.contains(o)));
+    smallest.slice(0, 3).forEach(take);
+  }
+  const area = (el) => {
+    const r2 = el.getBoundingClientRect();
+    return r2.width * r2.height;
+  };
+  const small = found.filter((el) => area(el) < 0.5 * window.innerWidth * window.innerHeight);
+  const targets = (small.length ? small : found).slice(0, 6);
+  if (!targets.length) return [];
+  targets[0].scrollIntoView({ block: "center", inline: "nearest" });
+  const layer = document.createElement("div");
+  layer.setAttribute("data-freckles-change", "");
+  layer.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483647;";
+  const out = [];
+  const H2 = window.innerHeight;
+  const W = window.innerWidth;
+  targets.forEach((el, i) => {
+    const r2 = el.getBoundingClientRect();
+    if (r2.bottom < 0 || r2.top > H2) return;
+    const pad = 6;
+    const x = Math.max(2, r2.left - pad);
+    const y = Math.max(2, r2.top - pad);
+    const w2 = Math.min(W - 2, r2.right + pad) - x;
+    const h2 = Math.min(H2 - 2, r2.bottom + pad) - y;
+    const box = document.createElement("div");
+    box.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${w2}px;height:${h2}px;border:3px solid #e5367f;border-radius:10px;background:rgba(229,54,127,.10);box-shadow:0 0 0 4px rgba(229,54,127,.22);box-sizing:border-box;`;
+    layer.appendChild(box);
+    if (i < 3) {
+      const tag = document.createElement("div");
+      tag.textContent = args.tag;
+      const top = y > 30 ? y - 26 : y + h2 + 4;
+      tag.style.cssText = `position:absolute;left:${x}px;top:${top}px;background:#e5367f;color:#fff;font:600 13px/1 system-ui,-apple-system,sans-serif;padding:6px 10px;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.25);`;
+      layer.appendChild(tag);
+    }
+    const label = (el.getAttribute("aria-label") || el.alt || el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+    out.push({ box: { x, y, w: w2, h: h2 }, label: label.length > 60 ? `${label.slice(0, 59)}\u2026` : label });
+  });
+  document.body.appendChild(layer);
+  return out;
+}
+function cropAround(found, screen) {
+  if (!found.length) return { x: 0, y: 0, width: screen.w, height: screen.h };
+  const left = Math.min(...found.map((f2) => f2.box.x));
+  const top = Math.min(...found.map((f2) => f2.box.y));
+  const right = Math.max(...found.map((f2) => f2.box.x + f2.box.w));
+  const bottom = Math.max(...found.map((f2) => f2.box.y + f2.box.h));
+  const needW = Math.max(screen.w / 2, right - left + 160, (bottom - top + 120) * 16 / 10);
+  const width = Math.min(screen.w, Math.round(needW));
+  const height = Math.min(screen.h, Math.round(width * 10 / 16));
+  const x = Math.max(0, Math.min(screen.w - width, Math.round((left + right) / 2 - width / 2)));
+  const y = Math.max(0, Math.min(screen.h - height, Math.round((top + bottom) / 2 - height / 2)));
+  return { x, y, width, height };
+}
+function describeFound(found) {
+  const labels = [...new Set(found.map((f2) => f2.label).filter(Boolean))].slice(0, 3).map((l) => `\u201C${l}\u201D`);
+  return labels.length <= 1 ? labels.join("") : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+}
+
 // packages/shots/src/compare.ts
 var import_pngjs = __toESM(require_png(), 1);
 
@@ -31634,6 +31833,62 @@ async function keepLayout(app, versionId, page, file3) {
       }));
     }
   } catch {
+  }
+}
+async function captureChange(app, versionId, hint = {}) {
+  if (!app.preview) return {};
+  let page = hint.page?.trim() || void 0;
+  let targets = targetsFromHint(hint.highlight);
+  if (!page || !targets) {
+    try {
+      const parent = await git(app.path, "rev-parse", "--verify", "--quiet", `${versionId}^`).catch(() => "");
+      const files = (await git(app.path, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", versionId)).split("\n").filter(Boolean);
+      const dir = app.preview.kind === "static" ? app.preview.dir?.replace(/^\.\/?|\/$/g, "") : void 0;
+      page ??= pageForFiles(dir ? files.map((f2) => f2.startsWith(`${dir}/`) ? f2.slice(dir.length + 1) : f2) : files);
+      if (!targets) {
+        const diff = parent ? await git(app.path, "diff", "--no-color", "-U0", parent, versionId) : "";
+        const found = addedTargets(diff.slice(0, 4e5));
+        targets = found.texts.length || found.selectors.length ? found : void 0;
+      }
+    } catch {
+    }
+  }
+  const home = app.preview.path ?? "/";
+  if (!targets && (!page || page === home || page === "/")) return {};
+  let running;
+  let browser;
+  try {
+    running = await start(app.preview, app.path);
+    const dir = shotsDir(app.id);
+    await mkdir3(dir, { recursive: true });
+    const file3 = join5(dir, `${versionId}.change.png`);
+    browser = await launch();
+    const tab = await browser.newPage({ viewport: VIEWPORT });
+    const opened = new URL(page ?? home, running.url);
+    let response = await tab.goto(opened.href, { waitUntil: "load", timeout: 3e4 });
+    if (response && response.status() >= 400) {
+      if (hint.page) return {};
+      page = void 0;
+      response = await tab.goto(running.url, { waitUntil: "load", timeout: 3e4 });
+      if (response && response.status() >= 400) return {};
+    }
+    await tab.waitForLoadState("networkidle", { timeout: 5e3 }).catch(() => {
+    });
+    const found = targets ? await tab.evaluate(outlineInPage, { ...targets, tag: "New" }).catch(() => []) : [];
+    const here = new URL(tab.url());
+    const at = `${here.pathname}${here.search}`;
+    const elsewhere = at !== new URL(running.url).pathname + new URL(running.url).search;
+    if (!found.length && !elsewhere) return {};
+    await tab.screenshot({ path: file3, clip: found.length ? cropAround(found, { w: VIEWPORT.width, h: VIEWPORT.height }) : void 0 });
+    const said = found.length ? describeFound(found) : "";
+    return { path: file3, page: at, note: said ? `Outlined: ${said}` : void 0 };
+  } catch {
+    return {};
+  } finally {
+    await browser?.close().catch(() => {
+    });
+    await running?.stop().catch(() => {
+    });
   }
 }
 
@@ -32683,11 +32938,19 @@ ${lines.map((l) => `  ${l}`).join("\n")}`;
 }
 
 // packages/mcp/src/instructions.ts
-var INSTRUCTIONS = `Freckles keeps the person's app as versions with pictures, publishes it, and knows what it costs. The person may not be a developer.
+var INSTRUCTIONS = `Your role: for this person you are their guide, working with Freckles' good-practice guide (best_practices topic "guide"). Assume they are not technical until they show otherwise. Walk them through the road one stage at a time (discover what it is for, plan, build in small steps, check, launch, grow), always say what comes next, and say once, early, in your own words, that the questions and checks come from Freckles' guide so they know why you are asking and checking. Plain words, one or two questions at a time; the decisions that are theirs (what it is for, what it costs, who can see it) you always ask, the engineering you do well yourself. You are an AI assistant following Freckles' guidance, not Freckles itself.
+
+Quality is a must, not a nicety: after every change a person can see, and before every publish, test the app the way a QA tester would (best_practices topic "quality"): run it and see it work (the main journey, forms with wrong and odd input, errors, phone width, keyboard only, private pages tried signed out, speed), never assume from the code. Fix every failed must before calling a step finished or publishing, and tell the person in plain words what you checked, what you fixed and what is left. If you can't run something, say so instead of claiming it passed.
+
+Freckles keeps the person's app as versions with pictures, publishes it, and knows what it costs. The person may not be a developer.
+
+You are the engineer, because the person may not be one: call best_practices (no topic lists them) and apply it quietly. Read "guide" first and "start" at the beginning of every new app (what is it for and who uses it, the smallest first version, whether anyone types something in or pays); "security" before anything private or public-facing; "cloud" before adding a part that costs money; "decisions" when you choose between real alternatives (write them in docs/decisions, and name_milestone the places worth coming back to); "quality" after every visible change and before every publish; "launch" before the first publish. Say what the app is for with set_goal (or goal on open_app), in the person's words: Freckles judges what it suggests next against it. Once, kindly, suggest turning their agent's Auto mode on so it doesn't stop to ask about every small action; a version is saved after each step, so they can always go back.
 
 First time in a folder: call open_app with the folder's path (a folder with no history yet gets one: version 1 is the app as it was; say so in one plain sentence), then set_preview if the app has a screen, so every version gets a picture. If a tool says this computer isn't connected, call connect_freckles and show the person the link and code it returns, word for word. If they say they can't see their apps in Freckles, or want a different account, connect_freckles names the account this computer is on; to change it call disconnect_freckles, or connect_freckles with switch_account true, and have them approve the new code signed in as the account they want. For an app that already has history, run sync_app once. Call whats_new to hear what Freckles has been waiting to tell you.
 
-After every finished step: call save_version with a one-line summary of what the app does differently, in the person's words ("Patients can now pick a time", not "refactor form handler"). Don't save half-finished work. Never run git commit, push or checkout yourself for this app: save_version, go_back, try_idea and keep_idea do that.
+After every finished step: call save_version with a one-line summary of what the app does differently, in the person's words ("Patients can now pick a time", not "refactor form handler"). Don't save half-finished work. Never run git commit, push or checkout yourself for this app: save_version, go_back, try_idea and keep_idea do that. Every version gets a picture of the page the app opens on; when what you changed is on another page or far down one, pass page (its address in the app, like /book) and highlight (the words a visitor sees on the changed part, or a selector) to save_version, so the picture shows the change itself, outlined.
+
+Trying ideas: when the person says "let's try", "what if", "show me two options", "I'm not sure about", or a change is big or risky, call try_idea straight away (don't ask first; say "I'll try that as an idea, so your app stays as it is") with a short name in their words. It is a safe parallel line that appears as its own line in their timeline; save versions on it as usual and say "this is on your idea". keep_idea when they like it, drop_idea when they don't; never run git branch or checkout for this yourself.
 
 Publishing: when the person asks to put the app online or share it, call publish straight away and give them the link. Publish only with publish, never with other hosting tools or CLIs. Anything the app needs from the cloud comes from Freckles too. Before proposing anything that costs money, call spending and tell them where their month stands. After publishing, call whats_new.
 
@@ -32714,6 +32977,338 @@ Updating Freckles itself: when whats_new says the plugin is out of date, offer t
 Tool results come in two parts: a sentence for the person, and detail "for the agent". Tell the person the sentence; use the detail to fix things, never show them raw logs unless they ask. A protected app must not be changed through Freckles or around it.
 
 Words: say version (by its number: "version 12"; the short id is only for calling tools), picture, go back, try an idea, keep the idea, publish. Don't say commit, branch, merge, push or deploy to the person.`;
+
+// packages/mcp/src/knowledge.ts
+var TOPICS = [
+  {
+    id: "guide",
+    title: "Your role: the person's guide, from Freckles",
+    when: "Read it first, before anything else, at the start of every conversation about an app.",
+    body: `You are not only the builder. For this person you are their **guide**, working with the practices Freckles provides so that what they end up with is professional even though they are not an engineer.
+
+**Assume the person is not technical** until they show otherwise (they use terms like API or repo, ask for code, or say they are a developer). Then match them: shorter, more technical, still with every minimum below. Never make someone feel behind for not knowing something.
+
+**Say where this comes from, once.** Early in the first conversation, in your own words: "I'm working with Freckles' good-practice guide, so I'll ask a few questions first and check some things before we put anything online. That's how your app ends up solid, not just working." Don't repeat it every message; do mention it again when you hold something back or add a check they didn't ask for ("that check is part of Freckles' guide: it catches X").
+
+**Walk them through the road, one stage at a time, and always say what comes next:**
+1. *Discover* (best_practices "start"): what it is for, who uses it, the smallest first version.
+2. *Plan*: say back what you'll build and leave out. Wait for a yes.
+3. *Build* in small steps (best_practices "build", "security"): one purpose per version; show what changed after each.
+4. *Check* (best_practices "quality"): you test it like a QA would, then tell them in plain words what you checked and fixed.
+5. *Launch* (best_practices "launch"): they are told what goes public, who can open it and what it costs; they decide.
+6. *Grow*: what to look at next, only what fits their goal.
+At the end of each stage, give them one sentence: where they are, and what the next step is.
+
+**How to talk.**
+- Plain words, short sentences, no jargon. If a technical word is unavoidable, explain it once in a few words.
+- Ask one or two questions at a time, never a form. Offer a sensible default so "you choose" is an easy answer.
+- Decisions that are theirs (what it is for, what it costs, who can see it, what is public) are always asked. Decisions that are engineering (structure, libraries, how to validate) are yours: make them well, and explain only if it matters to them.
+- When something is risky, expensive or hard to undo, stop and say so plainly before doing it, with the choice in a sentence.
+- When something is wrong, say so straight and say what you'll do. Never hide a failed check or a limit to keep things cheerful.
+- Celebrate real progress briefly ("it works end to end"), not every step.
+- You are an AI assistant; never claim otherwise. You are following Freckles' guidance, not Freckles itself speaking: say "Freckles' guide recommends\u2026", never "Freckles says you must".
+
+**This is about how you help, not what you may do.** It never overrides the person's own decisions or Freckles' limits on spending, privacy and publishing.`
+  },
+  {
+    id: "start",
+    title: "Starting a new app with someone who isn't technical",
+    when: "At the very beginning, before writing anything, and whenever the person's goal is unclear.",
+    body: `First read "guide" (your role as the person's guide, and how to talk to them). Then, before you build, spend two minutes learning what this is for. Ask in plain words, one or two questions at a time, never a form:
+
+1. **What is it for, and who uses it?** ("Patients of my clinic book a visit.") Call set_goal with that one sentence: Freckles uses it so what it suggests next fits.
+2. **What must it do on day one?** Push for the smallest useful version: one page, one job. Everything else is the next step.
+3. **Does anyone type something in?** (a booking, a message, an order) If yes, that information needs a safe place and an owner who can see it: see "data" and "security".
+4. **Does it handle money or private details?** Payments go through take_payments, never a card form of your own. Private details change what is allowed: read "security" first.
+5. **Who will see it first?** Only them, a few people, or the public. Sharing is a setting (share_app), not a rewrite.
+
+Then:
+- Say back, in two sentences, what you are about to build and what you are leaving out for now. Wait for a yes.
+- Build the smallest working version, save_version, and show it (show_timeline). People trust what they can see.
+- Work in small steps, one thing per version, each with a summary they would use ("Patients can now pick a time"). Never one giant change.
+- When they reach something worth remembering, name_milestone ("First version online", "Opened to patients").
+- Never ask them to choose a technology. Pick the simplest one that fits ("build" says how) and, if it matters, tell them why in one sentence.
+- Never use: commit, branch, repo, deploy, API, database, server, framework. Say version, idea, put it online, stored information, the page.`
+  },
+  {
+    id: "build",
+    title: "Building the app well",
+    when: "While building or changing code. Skim it at the start of every new app.",
+    body: `**Keep it simple.** The right amount of software is the least that does the job and that the next person (or agent) can understand.
+- Prefer a static page or a small app over a big framework. Add a server, a database or a build step only when a feature truly needs it. Every extra part is something that can break, cost money or need updating.
+- Few dependencies, well known, actively maintained. Pin versions (a lockfile). Before adding one, ask "can the platform or ten lines of code do this?".
+- One clear place for each thing: pages, styles, scripts, content, settings. Name files for what they are.
+
+**Make it work for real people.**
+- Phone first. Most visitors are on a phone: readable text, tap targets large enough, no sideways scrolling. Check it at a narrow width before saving.
+- Accessible by default: real headings in order, labels on every field, buttons that are buttons, text with enough contrast, images with alt text, everything reachable by keyboard. (WCAG 2.2 AA is the target.)
+- Every screen has all its states: empty (nothing yet), loading, success, and a clear, friendly error that says what to do next. A form that fails silently is a bug.
+- Fast: small images (right size, modern format), no unneeded scripts, nothing that blocks the first view.
+- Words people use, in their language. If the audience speaks more than one, keep text apart from layout so adding a language is easy.
+
+**Keep it correct.**
+- Check input on the way in, always on the server side as well as in the page. Never trust what a browser sends.
+- Test what would hurt if it broke: booking, paying, saving, signing in. A few honest checks of those beat many of trivia. Run them before save_version when the app has them. The full list a QA would check is in "quality", and it is a must.
+- Handle the boring edge cases: double clicks, back button, a slow connection, an empty list, a very long name, a date in another time zone.
+- Configuration that changes between "my computer" and "online" (addresses, keys) lives in settings, never in the code. Secrets never go in files that are saved (see "security").
+
+**Keep it understandable.**
+- A short README in the app's folder: what it is, what it is for, how to run it, where things are. Written for a stranger, updated when it changes.
+- Comments explain why, not what. Remove dead code and unused files as you go.
+- Big choices are written down once (see "decisions").
+
+**Work in small steps.** One purpose per version. If a step is large, split it. If you are about to rewrite something, stop and ask whether a smaller change gets there. Anything uncertain or risky is a try_idea, not an edit of the live app.`
+  },
+  {
+    id: "security",
+    title: "Security basics for every app",
+    when: "Before writing any login, form, upload, payment, stored information, or anything private; and before publishing.",
+    body: `Organised by OWASP Top 10:2025. The person cannot judge security, so you are responsible for it. Say what you did in one plain sentence ("Only you can open the page where bookings are listed"), not a lecture.
+
+**1. Who can see and do what (Broken Access Control, #1).**
+- Decide for every page and every action: who may use it? Check it on the server, not by hiding a button. A page the owner needs (a list of bookings, an admin screen) must refuse everyone else, even someone who guesses the address.
+- Don't write your own sign-in. Call use_sign_in first: apps behind Freckles already know who is signed in. Use that, and use share_app for who may open the app at all.
+- A person must only ever reach their own records. When a record has an id in the address, check it belongs to whoever is asking.
+
+**2. Misconfiguration (#2).**
+- Nothing in the app should be on by default that isn't needed: no sample accounts, debug pages, directory listings, or verbose error pages online.
+- Send safe browser headers where the app is served by your own code: Content-Security-Policy, X-Content-Type-Options, a frame restriction, and a Referrer-Policy.
+
+**3. Supply chain (#3).**
+- Every dependency is code you are running. Keep them few, from their official source, locked to a version, and updated when a security fix lands. Prefer none over many. Never run an install script or paste code you don't understand from a random page.
+- Load scripts from your own files where you can; if you must use a CDN, pin the exact version.
+
+**4. Secrets and cryptography (#4).**
+- Keys, tokens and passwords never go in the code, the page, or a saved version. Freckles keeps them out of reach of visitors; ask how rather than inventing a place. If one ever lands in a saved file, treat it as leaked: replace it, don't just delete it.
+- Never invent your own encryption or password storing. Use what the platform gives. Always online over https.
+
+**5. Injection (#5).** Anything a person types can be a trick. Never build a database query, a command, or a page by gluing their text in. Use parameters; escape on output; never put their text into a web address you then run or an HTML string you then trust.
+
+**6. Insecure design (#6).** Think of what could go wrong before writing it: what if someone submits a form ten thousand times? uploads a huge file? asks for someone else's booking? Add a sensible limit (size, rate, count) to every place the public can write.
+
+**7. Sign-in failures (#7).** Handled by use_sign_in. If anything checks a shared word or code, make it long, never in the page, and rate-limited.
+
+**8. Trusting what you didn't check (#8).** Don't load updates, plugins or data from anywhere unverified. Don't trust a payment "success" just because the customer came back to a page: payments are confirmed by take_payments' own records (list_sales_orders), never by the address alone.
+
+**9. Know when something breaks (#9).** Errors should be recorded in a way the owner can ask about (whats_new and whats_running), without writing customers' private details into logs.
+
+**10. Fail safely (#10).** When something unexpected happens, the app must refuse and say so, not carry on half-working or show the raw error.
+
+**Uploads.** Accept only the file types needed, cap the size, never serve an upload as a page, and never run it.
+
+**People's details (privacy).** Collect only what you need and say why where you ask. Names, emails, phones and health or money details are personal: never put them in a page's source, a log, an address, or a version. Offer a way to delete someone's details if they ask. If the app serves people in the EU or handles health details, tell the person plainly that a privacy notice is needed, and offer to draft one for them to have checked.
+
+**Payments.** Only through take_payments. Never a card form of your own, never card numbers anywhere in the app.
+
+Prove it, don't assume it: the "quality" gate has you try each private page signed out. Before publishing run the "launch" checklist.`
+  },
+  {
+    id: "cloud",
+    title: "How much cloud an app needs (and when to add more)",
+    when: "When the app needs to remember things, send emails, run on a schedule, store files, or when the person asks about cost, speed or reliability.",
+    body: `Based on the five pillars of the Azure Well-Architected Framework: reliability, security, cost optimization, operational excellence and performance efficiency. For a small app they come down to one rule: **start with the least, add a part only when a real need appears, and tell the person what it costs first.**
+
+**The ladder. Climb one step only when the step below can't do the job.**
+1. **Its pages only.** A static site. Free, fast, nothing to look after. Enough for a brochure, a menu, a landing page, a calculator that runs in the browser.
+2. **Stored information.** When the app must remember what people send (bookings, messages, orders): add_information and the built-in store. It stays inside the app's own space. Don't pick a database product; say "a place to keep what people send".
+3. **Email and reminders.** When the owner or customers must be told something. Check spending first.
+4. **Files people send.** Pictures and documents: only if a real feature needs it, with size and type limits.
+5. **Something that runs by itself.** Scheduled summaries, cleanups, reminders.
+6. **Its own address.** A name people type. Pro plan: check my_plan, quote_domain or use_my_domain.
+
+Never add a step "just in case". Never offer a part that has nothing to do with what the app is for.
+
+**What to say.** For each part: what it does for them in one sentence, what it costs per month (spending first), and what happens if they skip it. The goal of the app (set_goal) decides which parts matter: a clinic booking page needs stored information, email and a login-protected list of bookings; a menu page needs none of them.
+
+**Reliability.** The code is always safe: every version can be gone back to. For what people typed in: say honestly what is kept and where (what_it_is_made_of), and that an export is always possible (export_app). Don't promise backups Freckles doesn't show.
+
+**Cost.** Free means nothing that can bill. Everything that could cost money is behind a limit the person set (set_spending_limit): suggest one with the first paid part. Idle apps should cost almost nothing: static pages, apps that sleep between visits.
+
+**Operations.** Publish only through publish. After publishing, call whats_new: some problems only appear online. Keep the README current so another agent can pick the app up. Prefer one environment: preview before publish, never edit live.
+
+**Performance.** Static and cached beats dynamic. Small images. One request fewer is always faster. Measure before optimising; most small apps never need it.
+
+**Leaving.** Nothing here may lock the person in: take_it_with_you, move_to_my_azure and export_app always work. Don't use anything that would break that.`
+  },
+  {
+    id: "decisions",
+    title: "Decisions and milestones: writing down why",
+    when: "When you choose between real alternatives (a technology, a structure, a service), and when the app reaches something worth marking.",
+    body: `Six months from now neither the person nor a new agent will remember why. A short written decision costs two minutes and saves days. This is the Architecture Decision Record practice (MADR format), shrunk for small apps.
+
+**When to write one.** Whenever there were real alternatives and the choice will be hard to change later: how information is stored, whether to need a server, a payment or sign-in approach, a language or framework, sharing rules, anything that adds monthly cost. Not for colours, copy, or small fixes: those are versions.
+
+**Where.** In the app's folder: docs/decisions/0001-short-title.md, numbered in order. Plain files travel with the app, so any developer or agent finds them.
+
+**Template (keep it short).**
+\`\`\`
+# 0003. Keep bookings in Freckles' stored information
+Status: accepted   Date: 2026-10-23
+
+## What we needed to decide
+Where do patients' bookings live so the clinic can see them later?
+
+## Options
+1. Stored information inside the app. Simple, no extra cost.
+2. A separate database service. More power, monthly cost, more to look after.
+3. Email only. Nothing stored; easy to lose.
+
+## Decision
+Option 1. We expect a few hundred bookings a month; it covers that and keeps the app free.
+
+## Consequences
+Good: nothing extra to pay or manage. Bad: if bookings grow into the thousands a day we'll move them (export_app makes that possible).
+Revisit when: more than ~5,000 bookings a month.
+\`\`\`
+Statuses: proposed, accepted, superseded by 00NN. Never delete an old decision: write a new one that supersedes it.
+
+**Tell the person in one line**, not the file: "I wrote down why bookings are kept this way, in case anyone changes it later."
+
+**Milestones.** A version is a step; a milestone is a place worth coming back to. Use name_milestone for: first working version, first time it's online, opened to real users, first payment or booking, a big redesign, a handover. Keep names short and in their words ("Opened to patients"). Offer one when they reach it; don't spam: three to six in an app's early life is plenty.
+
+**Plan in milestones.** For anything bigger than one page, offer a rough path of 3 to 5 milestones ("1. Page people can see. 2. They can book. 3. I get an email. 4. Online with my address") and build them in order, each ending in a saved version they can look at. Keep a short ROADMAP section in the README with what is done and what's next; update it when a milestone is reached.`
+  },
+  {
+    id: "ideas",
+    title: "Trying something without risking the app (ideas)",
+    when: "Whenever the person wants to try, explore, compare or experiment; or you are about to make a risky or big change.",
+    body: `An **idea** is a safe parallel line of the app (it shows as its own line in the person's timeline) while the live app carries on untouched. This is how someone non-technical experiments without fear.
+
+**Start an idea (try_idea) when the person says anything like:** "let's try\u2026", "what if\u2026", "can we see how it looks with\u2026", "I'm not sure about\u2026", "show me two options", or when a change is large, risky, or something they might not like. Don't ask whether to start one: say "I'll try that as an idea, so your app stays as it is" and do it. Give it a short name in their words ("Darker look", "Booking in a pop-up").
+
+**Rules.**
+- Never run git branch or git checkout yourself: try_idea, keep_idea and drop_idea are the only way, so the timeline shows it.
+- If there are unsaved changes, save_version first: try_idea needs a clean start.
+- Save versions on the idea as usual. Each one gets its own picture; the live app is unchanged until it is kept.
+- Be clear which one you're on: after saving, say "this is on your idea 'Darker look'".
+- Several ideas can exist; work on one at a time. list_ideas shows them.
+- When they like it: keep_idea. If it clashes with changes made on the live app, explain the choice in plain words before resolving.
+- When they don't: drop_idea. Say "dropped; your app is as it was". Offer to try the other direction.
+- Never publish while on an idea unless they ask: publish shows the live app, not the idea.
+- For a big idea, a name_milestone on its first version helps them find it.`
+  },
+  {
+    id: "quality",
+    title: "The quality gate: what a QA would check, as a must",
+    when: "After every change a person can see (a quick check), and before the first publish and every publish after (the full list). Not optional.",
+    body: `A professional team does not ship what only the author has looked at. A QA tester checks a fixed set of things, and the person you are helping is counting on you to be that tester. Based on standard QA practice (smoke, sanity, regression and exploratory testing; functional and non-functional checks), WCAG 2.2 AA, Google's Core Web Vitals and OWASP.
+
+**The rule.** Items marked **MUST** are not done until you have **actually run the app and seen it work**, not read the code and assumed. Use a real browser or the app's preview when you can; if you can't run something, say that plainly instead of claiming it passed. Fix every failed MUST before saying a step is finished or publishing. A SHOULD you skip is mentioned to the person in one line.
+
+**After every visible change (quick check, two minutes):**
+- MUST: the app starts and the page opens with no error on screen and none in the browser console.
+- MUST: the one journey the app exists for still works from start to finish (the "golden path": visit, fill, submit, see the result, the owner sees it). This is regression testing: re-run it after every change, because new work breaks old work.
+- MUST: what you just changed works, including its empty, error and success states.
+- MUST: look at it at phone width (about 360 px) and laptop width.
+Then save_version.
+
+**Before the first publish, and before every publish (the full list):**
+
+*Works (functional)*
+- MUST: every form: required fields are enforced, wrong input gets a friendly message that says how to fix it, success is confirmed, a second click doesn't send it twice, and what was sent is really saved and visible to its owner.
+- MUST: every link and button goes somewhere real; no 404s, no dead buttons; the back button and a page refresh after submitting don't break or resubmit.
+- MUST: anything the app promises (an email, a confirmation, a reminder, a payment) really happens when tested. Payments only through take_payments, tried in test mode first.
+- SHOULD: search, filters, sorting and pagination (if any) give right answers, including when there are no results.
+
+*Odd input (edge cases)*
+- MUST: try empty, one character, a very long text, accents and emoji, an apostrophe or quote in a name (O'Brien, "Ana"), leading and trailing spaces, letters where numbers go, a past date, and the same thing twice. Nothing may crash, corrupt data, or show a raw error.
+- MUST: anything touching dates and times is right across time zones and clock changes; money is in the right currency with the right rounding.
+- SHOULD: uploads: wrong type, too large and empty files are refused with a clear message.
+
+*Errors*
+- MUST: a custom "page not found" that really answers 404 and leads back home; friendly messages for server errors that never show codes, file paths or stack traces.
+- MUST: no unhandled errors in the console on the main pages.
+- SHOULD: a slow or lost connection leaves the person informed, not staring at a frozen page.
+
+*Looks right and reads right (usability and content)*
+- MUST: the main action is obvious within a few seconds; navigation reaches every page; wording is consistent and in the audience's language; spelling checked.
+- MUST: no placeholder text (Lorem ipsum, TODO), no test data, no broken or missing images; the business name, contact details and what the app is for are present where a visitor expects them.
+- MUST: if people give personal details, say why where they type it, and a privacy notice exists (offer to draft one; tell the owner to have it checked). A cookie banner is only needed if non-essential cookies or analytics are used: don't add either by default.
+- SHOULD: loading, empty and success states each read well.
+
+*Different screens and browsers (compatibility)*
+- MUST: works at 360, 768 and 1280 px wide, with no sideways scrolling, text readable without zooming, and tap targets comfortably large (about 44 px).
+- MUST: opens and works in current Chrome, Safari, Firefox and Edge. Mind Safari on iPhone: inputs under 16 px text make it zoom in; the tall-screen unit 100vh hides content behind its toolbar (use dvh).
+- SHOULD: also try landscape and a 200% browser zoom.
+
+*Everyone can use it (accessibility, WCAG 2.2 AA)*
+- MUST: everything works with the keyboard alone (Tab, Enter, Esc), in a sensible order, with a clearly visible focus outline.
+- MUST: every image that carries meaning has alt text; every form field has a visible label; the page has a language set and one main heading with headings in order.
+- MUST: text contrast at least 4.5:1 (3:1 for large text and for buttons and field borders); information is never carried by colour alone; error messages are in words next to the field.
+- SHOULD: respects the reduced-motion setting; nothing flashes.
+
+*Fast enough (performance, Core Web Vitals, measured on a phone-like connection)*
+- MUST: the main page's biggest content appears within 2.5 s (LCP), it reacts to a tap within 200 ms (INP), and nothing jumps while loading (layout shift under 0.1). Measure with Lighthouse or the browser's tools; don't guess.
+- MUST: images are the right size, compressed and lazy where below the fold; no huge files; no scripts that block the first view.
+- SHOULD: total page weight stays modest (a few hundred KB of scripts at most for a simple app).
+
+*Safe (security: read the "security" topic, and prove it)*
+- MUST: try each private page and action signed out, and as someone else: they must refuse. Hiding a button is not protection.
+- MUST: no secret, key, password or personal data in the page source, the saved files, the address or the logs; the app is on https only.
+- MUST: anything the public can write to has a limit (size, rate, count) and is checked on the server.
+
+*Found and shared well (basics)*
+- MUST: each page has a clear title and a description; the home page has a share picture so a link looks right in a message; a favicon is set; one preferred address (http goes to https, www or not-www, not both).
+- MUST: private or preview pages are kept out of search results; public ones are not blocked by accident (check robots and noindex).
+- SHOULD: the page is findable by what it is for (the right words in headings, real text rather than text inside images).
+
+*Ready to release (release hygiene)*
+- MUST: the work is saved as a version, and the person knows how to go back (go_back).
+- MUST: after publishing, open the live link (not the preview) and run the golden path again on it; call whats_new and whats_running; tell the person who can open it (who_can_open).
+- MUST: a README says what the app is, how to change its content and where things are; big choices are in docs/decisions.
+- SHOULD: name the version as a milestone (name_milestone) and say in plain words what the person should look at in the first week.
+
+**What you tell the person (always, in plain words, a few lines):** what you checked ("I booked a test visit, tried a wrong phone number, and looked at it on a phone-sized screen"), what you found and fixed, what is left and how much it matters, and that these checks are part of Freckles' good-practice guide. Never "all tests pass" unless you ran them.`
+  },
+  {
+    id: "launch",
+    title: "Before putting it online: the launch checklist",
+    when: 'Right before you call publish for the first time, and before opening the app to more people. Run "quality" first.',
+    body: `This is the last gate. First run the full list in "quality": every MUST must pass, by running the app and seeing it work. Then go through this, fix what's wrong, and tell the person only what matters, in plain words.
+
+**Works**
+- The main job works from start to finish on a phone-width screen and a laptop. The booking, the form, the payment, whatever the app is for.
+- Every form shows success and a clear error. Empty states read well. No placeholder text ("Lorem ipsum", "TODO"), no test data, no broken links or images.
+- Page title, description and a sharing picture are set (what shows when the link is sent in a message).
+
+**Safe**
+- The "security" topic's checks are done for everything the app has: who can see what, nothing private in the code, limits on anything the public can write to.
+- Nothing secret in any saved file. No test accounts or debug pages.
+- If people type in personal details: say why where they type, and tell the owner a privacy notice is needed.
+
+**Costs**
+- spending was checked and the person knows what this adds each month (or that it's free). A spending limit exists if anything costs money.
+
+**Findable and kept**
+- A README says what the app is and how to change it. Big choices are in docs/decisions.
+- name_milestone for "First version online".
+- After publish: give them the link, call whats_new, and say who can open it (who_can_open) so they can decide if that is right.
+
+**If something isn't ready,** say so in one sentence and fix it before publishing, rather than publishing and apologising.`
+  }
+];
+var byId = new Map(TOPICS.map((t) => [t.id, t]));
+function topicList() {
+  return [
+    "Freckles best practices: how to build this app the way a good engineer and a good QA would, for someone who isn't either. Call best_practices with a topic:",
+    "",
+    ...TOPICS.map((t) => `- ${t.id}: ${t.title}. Read it: ${t.when}`),
+    "",
+    `Start with "guide" (your role), then "start" for a new app. Musts: "security" before anything private or public-facing, "quality" after every visible change and before every publish (verify by running the app, never by assuming), and "launch" before publishing. Apply what they say without lecturing the person: translate it into one plain sentence of what you did, and say once that it comes from Freckles' good-practice guide.`
+  ].join("\n");
+}
+function topicText(id) {
+  if (!id) return topicList();
+  const t = byId.get(id.trim().toLowerCase());
+  if (!t) return `There is no topic called "${id}".
+
+${topicList()}`;
+  return `# ${t.title}
+
+${t.body}
+
+Other topics: ${TOPICS.filter((x) => x.id !== t.id).map((x) => x.id).join(", ")}.`;
+}
 
 // packages/mcp/src/leave.ts
 import { execFile as execFile7 } from "node:child_process";
@@ -32836,7 +33431,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.7.4" : "dev";
+var COMPANION_VERSION = true ? "0.8.0" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
@@ -33044,14 +33639,17 @@ async function pushHistory(c, app, appId) {
   await takeWhatWasKeptOnline(app, url2);
   await git(app.path, "-c", "credential.helper=", "push", url2, `${app.liveBranch}:refs/heads/main`);
 }
-async function sendVersion(c, app, appId, v2, n) {
-  let picture;
-  if (v2.shot) {
+async function sendVersion(c, app, appId, v2, n, idea) {
+  const read = async (path2) => {
+    if (!path2) return void 0;
     try {
-      picture = (await readFile8(v2.shot)).toString("base64");
+      return (await readFile8(path2)).toString("base64");
     } catch {
+      return void 0;
     }
-  }
+  };
+  const picture = await read(v2.shot);
+  const changePicture = await read(v2.change?.shot);
   await api(c, "POST", `/api/v1/apps/${appId}/versions`, {
     n,
     sha: v2.id,
@@ -33060,8 +33658,32 @@ async function sendVersion(c, app, appId, v2, n) {
     savedAt: v2.savedAt,
     author: v2.author,
     pictureSkipped: v2.shotSkipped,
-    picture
+    picture,
+    // The exact change, outlined, and where it was taken.
+    changePicture,
+    changePage: changePicture ? v2.change?.page : void 0,
+    changeNote: changePicture ? v2.change?.note : void 0,
+    // A version saved on an idea belongs to the idea's own line, never to the live timeline.
+    idea: idea ? { name: idea.name, from: idea.from } : void 0
   });
+}
+async function tellIdea(app, idea, status) {
+  const c = await readConfig();
+  const appId = (await readSide(app.id))?.cloud?.appId;
+  if (!c.token || !appId) return "";
+  try {
+    await api(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/ideas`, { name: idea.name, from: idea.from, status });
+    return "";
+  } catch (err) {
+    return `
+For the agent: Freckles online couldn't be told about the idea (${forAgent(err).split("\n")[0]}); it works the same here and catches up on the next save.`;
+  }
+}
+async function tellGoal(app, goal) {
+  const c = await readConfig();
+  const appId = (await readSide(app.id))?.cloud?.appId;
+  if (!c.token || !appId) return;
+  await api(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/goal`, { goal }).catch(() => void 0);
 }
 var OFFER = `Offer this link only when the person can see something change (the screen, its words, how it behaves), after publishing, or when something broke; never while they're in the middle of building. For example: "Saved version 12. See it next to version 11?"`;
 async function linkTo(path2) {
@@ -33082,10 +33704,10 @@ ${what} in Freckles: ${url2}
 For the agent: ${OFFER} The link signs them in and works once, for five minutes; call whats_new or save again for a fresh one.` : "";
 }
 async function nameMilestone(app, n, name) {
-  const clean = name.replace(/\s+/g, " ").trim().slice(0, 40);
+  const clean2 = name.replace(/\s+/g, " ").trim().slice(0, 40);
   await updateSide(app.id, (s) => {
     const pins = { ...s.pins ?? {} };
-    if (clean) pins[n] = clean;
+    if (clean2) pins[n] = clean2;
     else delete pins[n];
     return { ...s, pins };
   });
@@ -33093,7 +33715,7 @@ async function nameMilestone(app, n, name) {
   const appId = (await readSide(app.id))?.cloud?.appId;
   if (!c.token || !appId) return "on this computer";
   try {
-    await api(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/pins`, { version: n, name: clean });
+    await api(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/pins`, { version: n, name: clean2 });
     return "on this computer and in Freckles online";
   } catch (err) {
     return `on this computer (Freckles online couldn't be told: ${forAgent(err)})`;
@@ -33125,6 +33747,17 @@ async function sync(app, options = {}) {
     const { appId, own, repo } = await ensureRegistered(c, app);
     if (!own) await pushHistory(c, app, appId);
     else await reportAzure(c, app, appId).catch(() => void 0);
+    const side = await readSide(app.id);
+    if (side?.goal) await tellGoal(app, side.goal);
+    const idea = await currentIdea(app);
+    if (idea) {
+      const mine = (await ideaVersions(app, idea)).slice(-(options.versions ?? 1));
+      await tellIdea(app, idea, "open");
+      for (const v2 of mine) await sendVersion(c, app, appId, v2, v2.n ?? idea.from + 1, idea);
+      await forget(app.path);
+      const link2 = await linkLine(`/apps/${encodeURIComponent(appId)}`, `${appName(app)} with your idea next to it`);
+      return `Also saved to Freckles online, on its own line for your idea \u201C${idea.name}\u201D: the live app there is unchanged.${link2}`;
+    }
     const total = Number(await git(app.path, "rev-list", "--count", app.liveBranch));
     const recent = (await listVersions(app, { limit: options.versions ?? 1 })).reverse();
     for (const [i, v2] of recent.entries()) await sendVersion(c, app, appId, v2, total - recent.length + 1 + i);
@@ -33332,12 +33965,12 @@ async function findMyApps(options = {}) {
   const sent = await api(c, "PUT", "/api/v1/existing", found);
   if (sent?.githubOff) {
     const sites = found.apps.filter((a) => a.site);
-    const rest = sites.length ? ` ${describeFound({ ...found, github: void 0, apps: sites.map(({ repo: _r, history: _h, ...a }) => a) })}` : "";
+    const rest = sites.length ? ` ${describeFound2({ ...found, github: void 0, apps: sites.map(({ repo: _r, history: _h, ...a }) => a) })}` : "";
     return `The person turned GitHub off in Freckles (Settings, Hosting), so their GitHub apps are not shown. Don't turn it back on for them: they can do it from that page.${rest}`;
   }
-  return describeFound(found);
+  return describeFound2(found);
 }
-function describeFound(found) {
+function describeFound2(found) {
   const online2 = found.apps.filter((a) => a.site);
   const parts = online2.reduce((n, a) => n + (a.alongside?.length ?? 0) + 1, 0);
   const noHome = found.apps.filter((a) => a.repo && !a.site);
@@ -34335,6 +34968,7 @@ async function fetchIdeas(app, options = {}) {
     const name = slug.replace(/-/g, " ");
     const here = await git(app.path, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`).catch(() => "");
     if (!here) {
+      if (await git(app.path, "merge-base", "--is-ancestor", sha, app.liveBranch).then(() => true, () => false)) continue;
       await git(app.path, "branch", branch, sha);
       news.push(name);
     } else if (here !== sha) {
@@ -34469,7 +35103,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.7.4" : "dev";
+var VERSION = true ? "0.8.0" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -34526,17 +35160,46 @@ tool(
   "Bring a folder under management so its versions can be saved and restored. Safe to call again on an app that is already open. A folder that has no history yet (an app built before Freckles, or in a folder where nobody ran git init) gets one: its first version is the app exactly as it is, with passwords, keys and dependency folders left out. Nothing else in the folder changes, apart from a .gitignore when it has none.",
   {
     path: external_exports.string().describe("Path to the app's folder. It needs no history yet: Freckles starts one when the folder has none."),
-    workspace: external_exports.string().optional().describe("Personal, a business name, or a client. Defaults to personal.")
+    workspace: external_exports.string().optional().describe("Personal, a business name, or a client. Defaults to personal."),
+    goal: external_exports.string().optional().describe(`What the app is for and who uses it, in one sentence of the person's words, e.g. "Patients of my physiotherapy clinic book a visit". Freckles judges what to suggest next against it. Ask the person if you don't know; you can also call set_goal later.`)
   },
-  async ({ path: path2, workspace }) => {
+  async ({ path: path2, workspace, goal }) => {
     const app = await openApp(resolvePath2(path2.replace(/^~/, process.env.HOME ?? "~")), { workspace, startHistory: true });
+    if (goal?.trim()) {
+      await setGoal(app, goal);
+      await tellGoal(app, goal.trim()).catch(() => void 0);
+    }
     const s = app.startedHistory;
     const started = s ? `
 This folder had no saved history, so Freckles started one: version 1 is the app exactly as it was (${s.files} file${s.files === 1 ? "" : "s"}), and every change from here is a version the person can go back to. Passwords and keys were left out.${s.wroteIgnore ? " A .gitignore was added, because the folder had none." : ""}
 For the agent: tell the person in one plain sentence, without saying git. Don't make a new version for the starting point: it's saved already.` : "";
+    const goalNote = (await readSide(app.id))?.goal ? "" : `
+For the agent: no goal is recorded for this app yet. Read best_practices topics "guide" and "start" before building, ask the person in plain words what it is for and who uses it, and call set_goal.`;
     return `Opened.
-${appLine(app)}${started}`;
+${appLine(app)}${started}${goalNote}`;
   }
+);
+tool(
+  "set_goal",
+  `Say what the app is for and who uses it, in one sentence of the person's own words, e.g. "Patients of my physiotherapy clinic book a visit". Freckles judges everything it suggests next (stored information, backups, a login, an address of their own) against it, so the person is never offered what has nothing to do with their goal. Ask them if you don't know. Call it again when the goal changes.`,
+  {
+    app: appRef,
+    goal: external_exports.string().describe("One sentence: what it does and for whom. Empty to clear.")
+  },
+  async ({ app: ref, goal }) => {
+    const app = await changeableApp(ref, "set_goal");
+    const clean2 = await setGoal(app, goal);
+    if (clean2) await tellGoal(app, clean2);
+    return clean2 ? `Noted what ${appName(app)} is for: "${clean2}". Freckles will judge what it suggests against it.` : "Cleared what the app is for.";
+  }
+);
+tool(
+  "best_practices",
+  `How to build this person's app the way a good engineer would, for someone who isn't one: starting well (what to ask first), software practice, security (OWASP Top 10), how much cloud an app needs and when to add more, writing down decisions and naming milestones, trying ideas safely, and a checklist before going online. Call it with no topic to see the list. Read "start" at the beginning of every new app, "security" before anything private or public-facing, and "launch" before the first publish. Apply it quietly: tell the person only what you did, in one plain sentence.`,
+  {
+    topic: external_exports.string().optional().describe("One of: start, build, security, cloud, decisions, ideas, launch. Leave out to list them.")
+  },
+  async ({ topic }) => topicText(topic)
 );
 tool("list_apps", "Every app this machine knows about.", {}, async () => {
   const ids = await listAppIds();
@@ -34680,14 +35343,18 @@ tool(
     app: appRef,
     summary: external_exports.string().describe('One line, plain language, e.g. "Added a booking form to the contact page".'),
     detail: external_exports.string().optional().describe("Optional longer explanation, still in plain language."),
-    all: external_exports.boolean().optional().describe("Include every changed file. Defaults to true.")
+    all: external_exports.boolean().optional().describe("Include every changed file. Defaults to true."),
+    page: external_exports.string().optional().describe(`Where the change can be seen, as the page's address in the app, e.g. "/book" or "/book.html". Give it whenever the change is not on the page the app opens on, so the version's picture shows the change and not just the home page. Leave out when it is on the home page.`),
+    highlight: external_exports.string().optional().describe('What to outline in that picture: the words a visitor sees on the changed part, e.g. "Your phone number", or a selector like "#book-now". Freckles outlines it in pink and tags it New. Leave out and it works out the change from the files.')
   },
-  async ({ app: ref, summary, detail, all }) => {
+  async ({ app: ref, summary, detail, all, page, highlight }) => {
     const app = await changeableApp(ref, "save_version");
     await onContributionIdea(app);
     const version2 = await saveVersion(app, { summary, detail, all: all ?? true });
     const shot = await capture(app, version2.id);
     await attachShot(app, version2.id, { path: shot.path, skipped: shot.skipped });
+    const change = await captureChange(app, version2.id, { page, highlight });
+    if (change.path) await attachChange(app, version2.id, { shot: change.path, page: change.page ?? "/", note: change.note });
     const saved = await getVersion(app, version2.id);
     const online2 = await contributionOf(app) ? await sendContribution(app) : await sync(app);
     return `Saved.
@@ -34757,20 +35424,20 @@ tool(
     if (!v2) throw new Error(`there's no version ${version2} in this app`);
     const head = `Version ${v2.n ?? ""} (${v2.shortId}): ${v2.summary}`.replace("Version  ", "Version ");
     if (path2) {
-      const clean = path2.replace(/^\.?\/+/, "").replace(/\/+$/, "").replace(/^\.$/, "");
-      if (clean.split("/").includes("..")) throw new Error("that path is outside the app");
-      const kind = await git(app.path, "cat-file", "-t", `${v2.id}:${clean}`).catch(() => "");
-      if (kind === "tree" || clean === "") {
-        const files = await git(app.path, "ls-tree", "-r", "--name-only", v2.id, "--", clean || ".");
+      const clean2 = path2.replace(/^\.?\/+/, "").replace(/\/+$/, "").replace(/^\.$/, "");
+      if (clean2.split("/").includes("..")) throw new Error("that path is outside the app");
+      const kind = await git(app.path, "cat-file", "-t", `${v2.id}:${clean2}`).catch(() => "");
+      if (kind === "tree" || clean2 === "") {
+        const files = await git(app.path, "ls-tree", "-r", "--name-only", v2.id, "--", clean2 || ".");
         return `${head}
-Files in ${clean || "the app"} at that version:
+Files in ${clean2 || "the app"} at that version:
 ${files || "(none)"}`;
       }
-      if (kind !== "blob") throw new Error(`${clean} wasn't in the app at version ${v2.shortId}`);
+      if (kind !== "blob") throw new Error(`${clean2} wasn't in the app at version ${v2.shortId}`);
       return cap(`${head}
-${clean} as it was in that version:
+${clean2} as it was in that version:
 
-${await git(app.path, "show", `${v2.id}:${clean}`)}`);
+${await git(app.path, "show", `${v2.id}:${clean2}`)}`);
     }
     const parent = await git(app.path, "rev-parse", "--verify", "--quiet", `${v2.id}^`).catch(() => "");
     const changes = parent ? await git(app.path, "diff", "--stat", "--patch", "--no-color", parent, v2.id) : await git(app.path, "show", "--stat", "--patch", "--no-color", "--format=", v2.id);
@@ -34788,8 +35455,11 @@ tool(
     name: external_exports.string().describe('What the user is trying, e.g. "dark mode".')
   },
   async ({ app: ref, name }) => {
-    const idea = await startIdea(await changeableApp(ref, "try_idea"), name);
-    return `Trying "${idea.name}". The live app is untouched \u2014 saved versions now belong to this idea.`;
+    const app = await changeableApp(ref, "try_idea");
+    const idea = await startIdea(app, name);
+    const online2 = await tellIdea(app, idea, "open");
+    return `Trying "${idea.name}". The live app is untouched \u2014 saved versions now belong to this idea, and it shows as its own line in the timeline.
+For the agent: tell the person plainly that this is a safe try and the app stays as it is. Say "this is on your idea" when you save. Keep it or drop it when they decide.${online2}`;
   }
 );
 tool("list_ideas", "The ideas currently being tried on this app.", { app: appRef }, async ({ app: ref }) => {
@@ -34803,8 +35473,14 @@ tool(
   async ({ app: ref, name }) => {
     const app = await changeableApp(ref, "keep_idea");
     await refuseForContribution(app, "keeps ideas in");
+    const open2 = (await listIdeas(app)).find((i) => i.name.toLowerCase() === name.trim().toLowerCase().replace(/-/g, " "));
     const result = await keepIdea(app, name);
-    if (result.kept) return `Kept "${name}". It is part of the live app now.`;
+    if (result.kept) {
+      const told = open2 ? await tellIdea(app, open2, "kept") : "";
+      const online2 = await sync(app);
+      return `Kept "${name}". It is part of the live app now.
+${online2}${told}`;
+    }
     return [
       `Could not keep "${name}" on its own: the live app and the idea both changed the same things.`,
       `Files needing a decision: ${result.clashes.join(", ")}`,
@@ -34817,8 +35493,11 @@ tool(
   "Walk away from an idea. The live app is unaffected.",
   { app: appRef, name: external_exports.string().describe("The idea's name, from list_ideas.") },
   async ({ app: ref, name }) => {
-    await dropIdea(await changeableApp(ref, "drop_idea"), name);
-    return `Dropped "${name}". The live app is unchanged.`;
+    const app = await changeableApp(ref, "drop_idea");
+    const open2 = (await listIdeas(app)).find((i) => i.name.toLowerCase() === name.trim().toLowerCase().replace(/-/g, " "));
+    await dropIdea(app, name);
+    const told = open2 ? await tellIdea(app, open2, "dropped") : "";
+    return `Dropped "${name}". The live app is unchanged.${told}`;
   }
 );
 tool(

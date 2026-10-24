@@ -4,7 +4,20 @@
 
 You need a Freckles account ([sign in or ask for an invitation](https://app.frecklescloud.com)) and [Node.js](https://nodejs.org) 22 or newer.
 
-## Connect your agent
+## New to this? Start here
+
+You don't need to know how to code, and you don't need the Terminal.
+
+1. **Get the Claude app** (claude.com, Mac or Windows) and open its **Code** tab.
+2. **Make a new empty folder** for your app (Documents → New Folder, named like "My clinic page") and choose it in the Code tab.
+3. **Paste this to Claude:** *Please add the Freckles plugin to Claude. Run `claude plugin marketplace add freckles-cloud/freckles` and then `claude plugin install freckles@freckles`. Check that Node.js is installed first: if it isn't, tell me what to install and why, in plain words.* When it asks permission to run a command, click Allow.
+4. **Quit the Claude app, open it again**, go back to the Code tab, and say: **Connect to Freckles**. It shows a web link and a short pairing code (not a text message). Open the link, check the code matches, and approve. The first time, Freckles also asks for your mobile number once, to check you're a real person.
+5. **Turn on Auto mode** (the mode selector in the row under the message box). Otherwise Claude stops to ask before every small action. Freckles saves a version after every step, so you can always go back.
+6. **Say what you want to build.** Something like: *I'm not technical, so please explain things in plain words. I want to build a page where patients of my clinic can book a visit. Before you build anything, ask me a few short questions, then tell me in two sentences what you'll build and wait for my yes. Save every step with Freckles.*
+
+Already have an app on GitHub or on your computer? There is a step-by-step guide on your Freckles page under **Your agent**.
+
+## Connect your agent (the technical way)
 
 ### Claude Code
 
