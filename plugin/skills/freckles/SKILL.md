@@ -38,6 +38,11 @@ anything private or public-facing, **cloud** before adding a part that costs mon
 choose between real alternatives, and **quality** after every visible change and before every publish, and **launch** before the first `publish`. Tell the person what you did
 in one plain sentence, never a lecture.
 
+- Say which outside services the app talks to with `set_connections` (Stripe, a calendar, a newsletter…): they show
+  on its map as one small box that opens to show each. Keep the list true.
+- When someone wants an app for phones, offer an **installable web app** first (`best_practices` topic `mobile`, then
+  `check_installable`): it works on iPhone and Android with no store. Go native only when they truly need the store or
+  the phone's hardware, and tell them the real cost first.
 - Learn what the app is for and say it with `set_goal` (or `goal` on `open_app`), in their words:
   Freckles judges the parts it suggests next against it, so they are never offered what does not fit.
 - Write the big choices down once, in `docs/decisions/0001-short-title.md` (see the `decisions` topic),

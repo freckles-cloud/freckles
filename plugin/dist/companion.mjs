@@ -14608,7 +14608,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve4.call(this, root, ref);
+      let _sch = resolve5.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -14635,7 +14635,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve4(root, ref) {
+    function resolve5(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -15465,7 +15465,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve4(baseURI, relativeURI, options) {
+    function resolve5(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -15834,7 +15834,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve4,
+      resolve: resolve5,
       resolveComponent,
       equal,
       serialize,
@@ -18906,27 +18906,27 @@ var require_chunkstream = __commonJS({
       this._buffers = null;
       this.emit("close");
     };
-    ChunkStream.prototype._processReadAllowingLess = function(read) {
+    ChunkStream.prototype._processReadAllowingLess = function(read2) {
       this._reads.shift();
       let smallerBuf = this._buffers[0];
-      if (smallerBuf.length > read.length) {
-        this._buffered -= read.length;
-        this._buffers[0] = smallerBuf.slice(read.length);
-        read.func.call(this, smallerBuf.slice(0, read.length));
+      if (smallerBuf.length > read2.length) {
+        this._buffered -= read2.length;
+        this._buffers[0] = smallerBuf.slice(read2.length);
+        read2.func.call(this, smallerBuf.slice(0, read2.length));
       } else {
         this._buffered -= smallerBuf.length;
         this._buffers.shift();
-        read.func.call(this, smallerBuf);
+        read2.func.call(this, smallerBuf);
       }
     };
-    ChunkStream.prototype._processRead = function(read) {
+    ChunkStream.prototype._processRead = function(read2) {
       this._reads.shift();
       let pos = 0;
       let count = 0;
-      let data = Buffer.alloc(read.length);
-      while (pos < read.length) {
+      let data = Buffer.alloc(read2.length);
+      while (pos < read2.length) {
         let buf = this._buffers[count++];
-        let len = Math.min(buf.length, read.length - pos);
+        let len = Math.min(buf.length, read2.length - pos);
         buf.copy(data, pos, 0, len);
         pos += len;
         if (len !== buf.length) {
@@ -18936,17 +18936,17 @@ var require_chunkstream = __commonJS({
       if (count > 0) {
         this._buffers.splice(0, count);
       }
-      this._buffered -= read.length;
-      read.func.call(this, data);
+      this._buffered -= read2.length;
+      read2.func.call(this, data);
     };
     ChunkStream.prototype._process = function() {
       try {
         while (this._buffered > 0 && this._reads && this._reads.length > 0) {
-          let read = this._reads[0];
-          if (read.allowLess) {
-            this._processReadAllowingLess(read);
-          } else if (this._buffered >= read.length) {
-            this._processRead(read);
+          let read2 = this._reads[0];
+          if (read2.allowLess) {
+            this._processReadAllowingLess(read2);
+          } else if (this._buffered >= read2.length) {
+            this._processRead(read2);
           } else {
             break;
           }
@@ -20575,12 +20575,12 @@ var require_sync_reader = __commonJS({
     };
     SyncReader.prototype.process = function() {
       while (this._reads.length > 0 && this._buffer.length) {
-        let read = this._reads[0];
-        if (this._buffer.length && (this._buffer.length >= read.length || read.allowLess)) {
+        let read2 = this._reads[0];
+        if (this._buffer.length && (this._buffer.length >= read2.length || read2.allowLess)) {
           this._reads.shift();
           let buf = this._buffer;
-          this._buffer = buf.slice(read.length);
-          read.func.call(this, buf.slice(0, read.length));
+          this._buffer = buf.slice(read2.length);
+          read2.func.call(this, buf.slice(0, read2.length));
         } else {
           break;
         }
@@ -28555,7 +28555,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error40) {
@@ -28572,7 +28572,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       const earlyReject = (error40) => {
         reject(error40);
       };
@@ -28650,7 +28650,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve4(parseResult.data);
+            resolve5(parseResult.data);
           }
         } catch (error40) {
           reject(error40);
@@ -28912,12 +28912,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve5, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve4, interval);
+      const timeoutId = setTimeout(resolve5, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -30048,7 +30048,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+      await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -30712,19 +30712,19 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve4) => {
+    return new Promise((resolve5) => {
       const json3 = serializeMessage(message);
       if (this._stdout.write(json3)) {
-        resolve4();
+        resolve5();
       } else {
-        this._stdout.once("drain", resolve4);
+        this._stdout.once("drain", resolve5);
       }
     });
   }
 };
 
 // packages/mcp/src/index.ts
-import { stat as stat6 } from "node:fs/promises";
+import { stat as stat7 } from "node:fs/promises";
 import { resolve as resolvePath2 } from "node:path";
 
 // packages/core/src/adopt.ts
@@ -30968,6 +30968,25 @@ async function setGoal(app, goal) {
   const clean2 = goal.replace(/\s+/g, " ").trim().slice(0, 300) || void 0;
   await updateSide(app.id, (side) => ({ ...side, goal: clean2 }));
   return clean2;
+}
+var MAX_CONNECTIONS = 12;
+function cleanConnections(list3) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const c of list3) {
+    const name = String(c.name ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const flow = c.flow === "in" || c.flow === "out" || c.flow === "both" ? c.flow : void 0;
+    out.push({ name, why: String(c.why ?? "").replace(/\s+/g, " ").trim().slice(0, 120), ...flow ? { flow } : {} });
+    if (out.length >= MAX_CONNECTIONS) break;
+  }
+  return out;
+}
+async function setConnections(app, list3) {
+  const connections = cleanConnections(list3);
+  await updateSide(app.id, (side) => ({ ...side, connections: connections.length ? connections : void 0 }));
+  return connections;
 }
 async function setPreview(app, preview) {
   const side = await updateSide(app.id, (current) => ({ ...current, preview }));
@@ -32542,13 +32561,13 @@ async function readBill(subscription) {
       { timeout: 9e4, maxBuffer: 32 * 1024 * 1024 }
     );
     const parsed = JSON.parse(stdout);
-    const read = /* @__PURE__ */ new Map();
+    const read2 = /* @__PURE__ */ new Map();
     for (const [cost, resourceId, currency] of parsed.properties?.rows ?? []) {
       const name = resourceId.split("/").pop()?.toLowerCase();
       if (!name) continue;
-      read.set(name, { minor: cost * 100, currency });
+      read2.set(name, { minor: cost * 100, currency });
     }
-    byResource = read;
+    byResource = read2;
   } catch {
   }
   spendCache = { at: Date.now(), subscription, byResource };
@@ -32944,7 +32963,7 @@ Quality is a must, not a nicety: after every change a person can see, and before
 
 Freckles keeps the person's app as versions with pictures, publishes it, and knows what it costs. The person may not be a developer.
 
-You are the engineer, because the person may not be one: call best_practices (no topic lists them) and apply it quietly. Read "guide" first and "start" at the beginning of every new app (what is it for and who uses it, the smallest first version, whether anyone types something in or pays); "security" before anything private or public-facing; "cloud" before adding a part that costs money; "decisions" when you choose between real alternatives (write them in docs/decisions, and name_milestone the places worth coming back to); "quality" after every visible change and before every publish; "launch" before the first publish. Say what the app is for with set_goal (or goal on open_app), in the person's words: Freckles judges what it suggests next against it. Once, kindly, suggest turning their agent's Auto mode on so it doesn't stop to ask about every small action; a version is saved after each step, so they can always go back.
+You are the engineer, because the person may not be one: call best_practices (no topic lists them) and apply it quietly. Read "guide" first and "start" at the beginning of every new app (what is it for and who uses it, the smallest first version, whether anyone types something in or pays); "security" before anything private or public-facing; "cloud" before adding a part that costs money; "decisions" when you choose between real alternatives (write them in docs/decisions, and name_milestone the places worth coming back to); "quality" after every visible change and before every publish; "launch" before the first publish. Say which outside services it talks to with set_connections (they show on its map as one box that opens to show each). When someone wants an app for phones, offer an installable web app first (best_practices "mobile", then check_installable) and go native only when they truly need the store. Say what the app is for with set_goal (or goal on open_app), in the person's words: Freckles judges what it suggests next against it. Once, kindly, suggest turning their agent's Auto mode on so it doesn't stop to ask about every small action; a version is saved after each step, so they can always go back.
 
 First time in a folder: call open_app with the folder's path (a folder with no history yet gets one: version 1 is the app as it was; say so in one plain sentence), then set_preview if the app has a screen, so every version gets a picture. If a tool says this computer isn't connected, call connect_freckles and show the person the link and code it returns, word for word. If they say they can't see their apps in Freckles, or want a different account, connect_freckles names the account this computer is on; to change it call disconnect_freckles, or connect_freckles with switch_account true, and have them approve the new code signed in as the account they want. For an app that already has history, run sync_app once. Call whats_new to hear what Freckles has been waiting to tell you.
 
@@ -32977,6 +32996,110 @@ Updating Freckles itself: when whats_new says the plugin is out of date, offer t
 Tool results come in two parts: a sentence for the person, and detail "for the agent". Tell the person the sentence; use the detail to fix things, never show them raw logs unless they ask. A protected app must not be changed through Freckles or around it.
 
 Words: say version (by its number: "version 12"; the short id is only for calling tools), picture, go back, try an idea, keep the idea, publish. Don't say commit, branch, merge, push or deploy to the person.`;
+
+// packages/mcp/src/installable.ts
+import { readFile as readFile7, stat as stat4 } from "node:fs/promises";
+import { dirname as dirname2, join as join10, resolve as resolve4 } from "node:path";
+var exists2 = async (p2) => stat4(p2).then((s) => s.isFile(), () => false);
+var read = (p2) => readFile7(p2, "utf8").catch(() => void 0);
+var PLACES2 = [".", "public", "static", "dist", "build", "docs"];
+async function pageRoot(root) {
+  for (const p2 of PLACES2) if (await exists2(join10(root, p2, "index.html"))) return resolve4(root, p2);
+  return void 0;
+}
+function tagAttr(html, tag, where, attr) {
+  for (const m2 of html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, "gi"))) {
+    if (!where.test(m2[0])) continue;
+    const v2 = m2[0].match(new RegExp(`\\b${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
+    if (v2) return v2[1] ?? v2[2];
+  }
+  return void 0;
+}
+var hasTag = (html, tag, where) => new RegExp(`<${tag}\\b[^>]*>`, "gi").test(html) && [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, "gi"))].some((m2) => where.test(m2[0]));
+function local(from, href) {
+  if (/^[a-z]+:|^\/\//i.test(href)) return void 0;
+  return join10(from, href.split(/[?#]/)[0]);
+}
+async function checkInstallable(appRoot) {
+  const base = await pageRoot(appRoot);
+  const findings = [];
+  const add2 = (id, level, ok, say) => findings.push({ id, level, ok, say });
+  if (!base) {
+    add2("page", "must", false, `I couldn't find a plain index.html to read. If this app is built by a framework, check it in the browser instead: Lighthouse's "Installable" check says the same things.`);
+    return { findings, ready: false };
+  }
+  const html = await read(join10(base, "index.html")) ?? "";
+  const manifestHref = tagAttr(html, "link", /\brel\s*=\s*["']manifest["']/i, "href");
+  const manifestPath = manifestHref ? local(base, manifestHref) : void 0;
+  add2("manifest-linked", "must", !!manifestHref, manifestHref ? "The page points to its manifest." : `The page has no <link rel="manifest" href="/manifest.webmanifest"> in its <head>, so phones don't know it is an app.`);
+  let manifest;
+  if (manifestPath) {
+    try {
+      manifest = JSON.parse(await read(manifestPath) ?? "");
+    } catch {
+      manifest = void 0;
+    }
+    add2("manifest-valid", "must", !!manifest, manifest ? "The manifest is valid." : `The manifest ${manifestHref} is missing or isn't valid JSON.`);
+  }
+  if (manifest) {
+    const name = String(manifest.name ?? manifest.short_name ?? "").trim();
+    add2("manifest-name", "must", !!name, name ? `It is called "${name}" on the home screen.` : "The manifest has no name or short_name.");
+    add2("manifest-short-name", "should", !!manifest.short_name && String(manifest.short_name).length <= 12, manifest.short_name ? String(manifest.short_name).length <= 12 ? `Its short name "${manifest.short_name}" fits under the icon.` : `Its short_name "${manifest.short_name}" is long: under the icon it is cut at about 12 characters.` : "Add a short_name of 12 characters or fewer: that is what shows under the icon.");
+    add2("manifest-start", "must", typeof manifest.start_url === "string" && manifest.start_url.length > 0, manifest.start_url ? `It opens at ${manifest.start_url}.` : 'The manifest has no start_url (use "/" or "./").');
+    const display = String(manifest.display ?? "");
+    add2("manifest-display", "must", ["standalone", "fullscreen", "minimal-ui"].includes(display), ["standalone", "fullscreen", "minimal-ui"].includes(display) ? "It opens like an app, without the browser's address bar." : `The manifest's "display" should be "standalone", or it opens as a browser tab.`);
+    add2("manifest-colors", "should", !!manifest.theme_color && !!manifest.background_color, manifest.theme_color && manifest.background_color ? "It has a theme colour and a start-up background." : "Add theme_color and background_color so the status bar and the start-up screen match the app.");
+    const icons = Array.isArray(manifest.icons) ? manifest.icons : [];
+    const has2 = async (size) => {
+      for (const i of icons) {
+        if (!(i.sizes ?? "").split(/\s+/).includes(size) || !i.src) continue;
+        const p2 = local(i.src.startsWith("/") ? base : dirname2(manifestPath), i.src);
+        if (p2 && await exists2(p2) && !/\.svg$/i.test(i.src)) return true;
+      }
+      return false;
+    };
+    for (const size of ["192x192", "512x512"]) add2(`icon-${size}`, "must", await has2(size), await has2(size) ? `There is a ${size} icon.` : `No ${size} PNG icon that exists in the app's files. Phones need it to make the home screen icon.`);
+    const maskable = icons.some((i) => /maskable/.test(i.purpose ?? ""));
+    add2("icon-maskable", "should", maskable, maskable ? "It has an icon that Android can crop to its own shape." : 'Add a 512x512 icon with "purpose": "maskable" (keep the picture inside the middle 80%), or Android puts the icon on a white circle.');
+  }
+  const viewport = tagAttr(html, "meta", /\bname\s*=\s*["']viewport["']/i, "content") ?? "";
+  add2("viewport", "must", /width\s*=\s*device-width/i.test(viewport), /width\s*=\s*device-width/i.test(viewport) ? "The page is sized for phones." : 'The page needs <meta name="viewport" content="width=device-width, initial-scale=1"> or phones show it tiny.');
+  const apple = hasTag(html, "link", /\brel\s*=\s*["']apple-touch-icon["']/i);
+  add2("apple-touch-icon", "must", apple, apple ? "iPhones have their own icon." : `iPhones ignore the manifest's icons: add <link rel="apple-touch-icon" href="/apple-touch-icon.png"> (a 180x180 PNG), or the home screen shows a blurry snapshot of the page.`);
+  const theme = tagAttr(html, "meta", /\bname\s*=\s*["']theme-color["']/i, "content");
+  add2("theme-color", "should", !!theme, theme ? "The phone's status bar matches the app." : `Add <meta name="theme-color" content="#..."> so the phone's status bar matches the app.`);
+  add2("lang", "should", /<html\b[^>]*\blang\s*=/i.test(html), /<html\b[^>]*\blang\s*=/i.test(html) ? "The page says what language it is in." : 'Add lang="en" (or the right language) to <html>.');
+  const files = [html];
+  for (const m2 of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) {
+    const p2 = local(base, m2[1]);
+    if (p2) files.push(await read(p2) ?? "");
+  }
+  const register = files.join("\n").match(/serviceWorker\s*\.\s*register\(\s*["']([^"']+)["']/);
+  const swPath = register ? local(base, register[1]) : void 0;
+  const sw = swPath ? await read(swPath) : void 0;
+  add2("service-worker", "should", !!sw, sw ? "A service worker is registered, so the app can open without a connection." : "No service worker is registered. It is not needed to install, but it is what lets the app open offline and load fast.");
+  if (sw) {
+    add2("service-worker-fetch", "should", /addEventListener\(\s*["']fetch["']/.test(sw), /addEventListener\(\s*["']fetch["']/.test(sw) ? "The service worker answers requests, so something shows offline." : "The service worker doesn't handle fetch, so nothing shows offline.");
+    const careful = /_freckles|_data/.test(sw) || /method\s*!==?\s*["']GET["']|\.method\s*!==?\s*['"]GET['"]/.test(sw);
+    add2("service-worker-private", "must", careful, careful ? "It leaves signed-in and stored-information requests alone, so private data isn't kept on the phone." : "The service worker must not cache signed-in or stored-information requests (/_freckles/, /_data/) or anything that isn't a GET: private data would stay on the phone and go stale.");
+  }
+  const ready = findings.filter((f2) => f2.level === "must").every((f2) => f2.ok);
+  return { page: join10(base, "index.html"), findings, ready };
+}
+function describeInstallable(r2) {
+  const line = (f2) => `${f2.ok ? "\u2713" : f2.level === "must" ? "\u2717 MUST" : "\xB7 should"}: ${f2.say}`;
+  const must = r2.findings.filter((f2) => f2.level === "must");
+  const should = r2.findings.filter((f2) => f2.level === "should");
+  const todo = must.filter((f2) => !f2.ok).length;
+  return [
+    r2.ready ? `This app can be put on a phone's home screen like an app${r2.page ? ` (read from ${r2.page})` : ""}.` : `Not ready to be put on a phone's home screen yet: ${todo} thing${todo === 1 ? "" : "s"} to fix.`,
+    "",
+    ...must.map(line),
+    ...should.map(line),
+    "",
+    'For the agent: fix every \u2717 MUST, then check again. A should is worth doing when it is quick; tell the person in one line about any you skip. Then open it on a real phone and install it from the browser (Android: the install prompt or menu; iPhone: Share, then Add to Home Screen), and run the "quality" gate. See best_practices "mobile" for the files.'
+  ].join("\n");
+}
 
 // packages/mcp/src/knowledge.ts
 var TOPICS = [
@@ -33118,6 +33241,8 @@ Prove it, don't assume it: the "quality" gate has you try each private page sign
 
 Never add a step "just in case". Never offer a part that has nothing to do with what the app is for.
 
+**Outside services.** When the app uses a service outside Freckles (Stripe, a calendar, a spreadsheet, a newsletter, WhatsApp, an AI service), say so with set_connections: one line each, in the person's words ("Google Calendar: shows free times and adds each booking"). Freckles draws them on the map as a single small box that opens to show each, so the person can see who their app shares information with. Keep the list true: update it when you add or remove one. Keys never go in it or in the code: they live in Keys and passwords. Prefer what Freckles provides (payments through take_payments, sign-in through use_sign_in, stored information) over an outside service for the same job, and tell the person plainly when you do add one, and what information goes to it.
+
 **What to say.** For each part: what it does for them in one sentence, what it costs per month (spending first), and what happens if they skip it. The goal of the app (set_goal) decides which parts matter: a clinic booking page needs stored information, email and a login-protected list of bookings; a menu page needs none of them.
 
 **Reliability.** The code is always safe: every version can be gone back to. For what people typed in: say honestly what is kept and where (what_it_is_made_of), and that an export is always possible (export_app). Don't promise backups Freckles doesn't show.
@@ -33247,6 +33372,11 @@ Then save_version.
 - MUST: no secret, key, password or personal data in the page source, the saved files, the address or the logs; the app is on https only.
 - MUST: anything the public can write to has a limit (size, rate, count) and is checked on the server.
 
+*Installable on a phone (only if people will add it to their home screen)*
+- MUST: check_installable passes every MUST; then install it on a real phone (or the browser's phone view), open it from the home screen, and open it again with the connection off.
+- MUST: the service worker never keeps signed-in pages or stored information on the phone.
+- SHOULD: an icon that looks right on both Android (maskable) and iPhone (apple-touch-icon), and a one-line hint on iPhone about Share, then Add to Home Screen.
+
 *Found and shared well (basics)*
 - MUST: each page has a clear title and a description; the home page has a share picture so a link looks right in a message; a favicon is set; one preferred address (http goes to https, www or not-www, not both).
 - MUST: private or preview pages are kept out of search results; public ones are not blocked by accident (check robots and noindex).
@@ -33259,6 +33389,62 @@ Then save_version.
 - SHOULD: name the version as a milestone (name_milestone) and say in plain words what the person should look at in the first week.
 
 **What you tell the person (always, in plain words, a few lines):** what you checked ("I booked a test visit, tried a wrong phone number, and looked at it on a phone-sized screen"), what you found and fixed, what is left and how much it matters, and that these checks are part of Freckles' good-practice guide. Never "all tests pass" unless you ran them.`
+  },
+  {
+    id: "mobile",
+    title: "An app for phones: installable first, native only when it must be",
+    when: "Whenever the person says app for phones, iPhone, Android, install, home screen or app store; and for any web app people will mostly open on a phone.",
+    body: `Most "I want an app for phones" is best answered, first, with an **installable web app (a PWA)**: the same app, published through Freckles, that people add to their home screen from the browser. It opens full screen with its own icon, works on iPhone and Android, needs no app store, no review and no fee, and updates the moment you publish. Offer it before anything native, and say plainly what it is.
+
+**Say it in these words to the person:** "I can make it so people add it to their phone's home screen and it opens like an app, with its own icon. It works on iPhone and Android and needs no app store. A store app is a bigger step; we can take it later if you need it."
+
+**Build it (all in the app's own folder, served from the root):**
+1. \`manifest.webmanifest\`:
+\`\`\`
+{
+  "name": "Clinic Luc\xEDa",
+  "short_name": "Clinic",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#1b4332",
+  "background_color": "#ffffff",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+\`\`\`
+2. In every page's \`<head>\`:
+\`\`\`
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1b4332">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+\`\`\`
+3. Icons as real PNG files: 192 and 512 square; a 512 **maskable** one with the picture inside the middle 80% (Android crops it to its own shape); and \`apple-touch-icon.png\` at 180 (iPhones ignore the manifest's icons). Use the person's logo if they have one; otherwise make a simple, clean mark in their colours and show it to them. Never leave the default or a blurry screenshot.
+4. A small service worker \`sw.js\`, registered from the page with \`navigator.serviceWorker.register('/sw.js')\`, so the app opens fast and shows something offline:
+\`\`\`
+const CACHE = "app-v1"; // change the number on every publish, or phones keep the old files
+const SHELL = ["/", "/index.html", "/offline.html"];
+self.addEventListener("install", (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
+self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
+self.addEventListener("fetch", (e) => {
+  const u = new URL(e.request.url);
+  // Never keep what is private or changes: not signed-in pages, not stored information, nothing that isn't a plain GET.
+  if (e.request.method !== "GET" || u.origin !== location.origin || u.pathname.startsWith("/_freckles/") || u.pathname.startsWith("/_data/")) return;
+  e.respondWith(fetch(e.request).then((r) => { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); return r; }).catch(() => caches.match(e.request).then((r) => r || caches.match("/offline.html"))));
+});
+\`\`\`
+Make \`offline.html\` a friendly page that says the app needs a connection for this, in the person's words.
+5. Tell people how to install it, inside the app, once, gently (not a nag): on Android, offer a button that calls the saved \`beforeinstallprompt\` event; on iPhone there is no prompt, so show a short hint "Tap Share, then Add to Home Screen". Hide it when the app is already installed (\`matchMedia('(display-mode: standalone)')\`).
+
+**Check it:** call check_installable and fix every MUST. Then do what a person would: open the published link on a real phone (or the browser's phone view), install it, open it from the home screen, turn off the connection and open it again, and run the "quality" gate. Lighthouse's "Installable" check is the second opinion.
+
+**Be honest about the limits.** A web app on the home screen can't be found in the App Store or Play Store, has less access to the phone's hardware (on iPhone: notifications only for apps added to the home screen, and only on recent iOS), and can't run in the background. If the person needs the store, deep device features, or work in the background, say that this is the point to go native; explain the real cost (their own Apple Developer account at about $99 a year and Google Play at about $25 once, review times, and a separate app to maintain), and write the choice in docs/decisions. Don't start a native app without that conversation, and never ask for their store passwords or keys.
+
+**It still has to be a good web app first:** phone width, big tap targets, inputs at 16 px text or more (or iPhone zooms in), no hover-only actions, fast on a slow connection. The "quality" gate applies in full.`
   },
   {
     id: "launch",
@@ -33294,7 +33480,7 @@ function topicList() {
     "",
     ...TOPICS.map((t) => `- ${t.id}: ${t.title}. Read it: ${t.when}`),
     "",
-    `Start with "guide" (your role), then "start" for a new app. Musts: "security" before anything private or public-facing, "quality" after every visible change and before every publish (verify by running the app, never by assuming), and "launch" before publishing. Apply what they say without lecturing the person: translate it into one plain sentence of what you did, and say once that it comes from Freckles' good-practice guide.`
+    `Start with "guide" (your role), then "start" for a new app. Musts: "security" before anything private or public-facing, "quality" after every visible change and before every publish (verify by running the app, never by assuming), and "mobile" whenever someone wants an app for phones, and "launch" before publishing. Apply what they say without lecturing the person: translate it into one plain sentence of what you did, and say once that it comes from Freckles' good-practice guide.`
   ].join("\n");
 }
 function topicText(id) {
@@ -33315,15 +33501,15 @@ import { execFile as execFile7 } from "node:child_process";
 import { existsSync as existsSync3 } from "node:fs";
 import { cp, mkdir as mkdir9, mkdtemp as mkdtemp2, rm as rm8, writeFile as writeFile7 } from "node:fs/promises";
 import { homedir as homedir5, tmpdir as tmpdir2 } from "node:os";
-import { join as join12 } from "node:path";
+import { join as join13 } from "node:path";
 import { promisify as promisify9 } from "node:util";
 
 // packages/mcp/src/cloud.ts
-import { chmod as chmod2, mkdir as mkdir8, mkdtemp, readFile as readFile8, rm as rm7, stat as stat4, writeFile as writeFile6 } from "node:fs/promises";
+import { chmod as chmod2, mkdir as mkdir8, mkdtemp, readFile as readFile9, rm as rm7, stat as stat5, writeFile as writeFile6 } from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Readable } from "node:stream";
 import { homedir as homedir4, hostname as hostname2 } from "node:os";
-import { basename as basename3, dirname as dirname2, join as join11 } from "node:path";
+import { basename as basename3, dirname as dirname3, join as join12 } from "node:path";
 import { execFile as execFile6 } from "node:child_process";
 import { createReadStream as createReadStream2, existsSync as existsSync2 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33334,23 +33520,23 @@ import { execFile as execFile5 } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir as mkdir7, rm as rm6, writeFile as writeFile5 } from "node:fs/promises";
 import { homedir as homedir3 } from "node:os";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify as promisify7 } from "node:util";
 var run7 = promisify7(execFile5);
-var HOME = process.env.CFP_HOME ?? join10(homedir3(), ".cloud-for-personal");
-var OFFERED = join10(HOME, "menu-dot-offered");
+var HOME = process.env.CFP_HOME ?? join11(homedir3(), ".cloud-for-personal");
+var OFFERED = join11(HOME, "menu-dot-offered");
 function filesDir(kind) {
   const probe = kind === "windows" ? "Install-FrecklesTray.ps1" : "Freckles Menu.app";
   for (const rel of [`../menubar/${kind}/`, `../../../menubar/${kind}/`, ...kind === "mac" ? ["../../../menubar/build/"] : []]) {
     const dir = fileURLToPath(new URL(rel, import.meta.url));
-    if (existsSync(join10(dir, probe))) return dir;
+    if (existsSync(join11(dir, probe))) return dir;
   }
   return void 0;
 }
-var MAC_APP = join10(homedir3(), "Applications", "Freckles Menu.app");
-var MAC_AGENT = join10(homedir3(), "Library", "LaunchAgents", "com.frecklescloud.menu.plist");
-var WIN_STARTUP = join10(process.env.APPDATA ?? "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Freckles Menu.lnk");
+var MAC_APP = join11(homedir3(), "Applications", "Freckles Menu.app");
+var MAC_AGENT = join11(homedir3(), "Library", "LaunchAgents", "com.frecklescloud.menu.plist");
+var WIN_STARTUP = join11(process.env.APPDATA ?? "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Freckles Menu.lnk");
 function installed() {
   if (process.platform === "darwin") return existsSync(MAC_APP);
   if (process.platform === "win32") return existsSync(WIN_STARTUP);
@@ -33368,12 +33554,12 @@ async function installMac() {
   const from = filesDir("mac");
   if (!from) throw new Error("The dot isn't in this copy of Freckles. Update the Freckles plugin, then try again.");
   await run7("pkill", ["-x", "FrecklesMenu"]).catch(() => void 0);
-  await mkdir7(join10(homedir3(), "Applications"), { recursive: true });
+  await mkdir7(join11(homedir3(), "Applications"), { recursive: true });
   await rm6(MAC_APP, { recursive: true, force: true });
-  await run7("cp", ["-R", join10(from, "Freckles Menu.app"), MAC_APP]);
-  await chmod(join10(MAC_APP, "Contents", "MacOS", "FrecklesMenu"), 493);
+  await run7("cp", ["-R", join11(from, "Freckles Menu.app"), MAC_APP]);
+  await chmod(join11(MAC_APP, "Contents", "MacOS", "FrecklesMenu"), 493);
   await run7("codesign", ["--force", "-s", "-", MAC_APP]);
-  await mkdir7(join10(homedir3(), "Library", "LaunchAgents"), { recursive: true });
+  await mkdir7(join11(homedir3(), "Library", "LaunchAgents"), { recursive: true });
   await writeFile5(
     MAC_AGENT,
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -33406,7 +33592,7 @@ async function removeMac() {
 async function powershell(args) {
   const dir = filesDir("windows");
   if (!dir) throw new Error("The dot isn't in this copy of Freckles. Update the Freckles plugin, then try again.");
-  const { stdout } = await run7("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join10(dir, "Install-FrecklesTray.ps1"), ...args], { timeout: 6e4, windowsHide: true });
+  const { stdout } = await run7("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join11(dir, "Install-FrecklesTray.ps1"), ...args], { timeout: 6e4, windowsHide: true });
   return stdout.trim();
 }
 async function menuDot(remove = false) {
@@ -33431,7 +33617,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.8.0" : "dev";
+var COMPANION_VERSION = true ? "0.8.1" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
@@ -33444,9 +33630,9 @@ function computerHeader() {
   const app = agentApp();
   return encodeURIComponent(JSON.stringify({ name: hostname2().replace(/\.local$/, ""), platform: { darwin: "Mac", win32: "Windows", linux: "Linux" }[process.platform] ?? process.platform, ...app ? { app } : {} }));
 }
-var HOME2 = process.env.CFP_HOME ?? join11(homedir4(), ".cloud-for-personal");
-var CONFIG = join11(HOME2, "secrets", "companion.json");
-var QUEUE = join11(HOME2, "companion-queue.json");
+var HOME2 = process.env.CFP_HOME ?? join12(homedir4(), ".cloud-for-personal");
+var CONFIG = join12(HOME2, "secrets", "companion.json");
+var QUEUE = join12(HOME2, "companion-queue.json");
 var DEFAULT_URL = "https://app.frecklescloud.com";
 var NotConnected = class extends Error {
   constructor() {
@@ -33456,14 +33642,14 @@ var NotConnected = class extends Error {
 async function readConfig() {
   const url2 = process.env.FRECKLES_URL;
   try {
-    const c = JSON.parse(await readFile8(CONFIG, "utf8"));
+    const c = JSON.parse(await readFile9(CONFIG, "utf8"));
     return url2 && url2 !== c.url ? { url: url2 } : c;
   } catch {
     return { url: url2 ?? DEFAULT_URL };
   }
 }
 async function writeConfig(c) {
-  await mkdir8(dirname2(CONFIG), { recursive: true, mode: 448 });
+  await mkdir8(dirname3(CONFIG), { recursive: true, mode: 448 });
   await writeFile6(CONFIG, JSON.stringify(c, null, 2), { mode: 384 });
   await chmod2(CONFIG, 384);
 }
@@ -33563,7 +33749,7 @@ async function queue(q) {
 }
 async function readQueue() {
   try {
-    return JSON.parse(await readFile8(QUEUE, "utf8"));
+    return JSON.parse(await readFile9(QUEUE, "utf8"));
   } catch {
     return [];
   }
@@ -33640,16 +33826,16 @@ async function pushHistory(c, app, appId) {
   await git(app.path, "-c", "credential.helper=", "push", url2, `${app.liveBranch}:refs/heads/main`);
 }
 async function sendVersion(c, app, appId, v2, n, idea) {
-  const read = async (path2) => {
+  const read2 = async (path2) => {
     if (!path2) return void 0;
     try {
-      return (await readFile8(path2)).toString("base64");
+      return (await readFile9(path2)).toString("base64");
     } catch {
       return void 0;
     }
   };
-  const picture = await read(v2.shot);
-  const changePicture = await read(v2.change?.shot);
+  const picture = await read2(v2.shot);
+  const changePicture = await read2(v2.change?.shot);
   await api(c, "POST", `/api/v1/apps/${appId}/versions`, {
     n,
     sha: v2.id,
@@ -33678,6 +33864,12 @@ async function tellIdea(app, idea, status) {
     return `
 For the agent: Freckles online couldn't be told about the idea (${forAgent(err).split("\n")[0]}); it works the same here and catches up on the next save.`;
   }
+}
+async function tellConnections(app, connections) {
+  const c = await readConfig();
+  const appId = (await readSide(app.id))?.cloud?.appId;
+  if (!c.token || !appId) return false;
+  return api(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/connections`, { connections }).then(() => true, () => false);
 }
 async function tellGoal(app, goal) {
   const c = await readConfig();
@@ -33749,6 +33941,7 @@ async function sync(app, options = {}) {
     else await reportAzure(c, app, appId).catch(() => void 0);
     const side = await readSide(app.id);
     if (side?.goal) await tellGoal(app, side.goal);
+    if (side?.connections?.length) await tellConnections(app, side.connections);
     const idea = await currentIdea(app);
     if (idea) {
       const mine = (await ideaVersions(app, idea)).slice(-(options.versions ?? 1));
@@ -33861,20 +34054,20 @@ var frecklesHosting = {
     const c = await readConfig();
     if (!c.token) throw new NotConnected();
     const { appId } = await ensureRegistered(c, app);
-    const root = await mkdtemp(join11(tmpdir(), "freckles-publish-"));
-    const dir = join11(root, "files");
-    const archive = join11(root, "version.tar.gz");
+    const root = await mkdtemp(join12(tmpdir(), "freckles-publish-"));
+    const dir = join12(root, "files");
+    const archive = join12(root, "version.tar.gz");
     const report = publishProgress.getStore();
     try {
       await archiveVersion(app, version2, dir);
       const heldBack = await holdBackRisky(dir);
       const kind = app.preview?.kind === "command" ? "container" : "static";
-      if (kind === "container" && !existsSync2(join11(dir, "Dockerfile"))) {
+      if (kind === "container" && !existsSync2(join12(dir, "Dockerfile"))) {
         const err = new Error("This app runs its own server, and it needs one more file before it can be published.");
         err.agent = "Publishing an app with a server on Freckles Hosting needs a Dockerfile at the root of the published folder. Add one that installs dependencies, builds, and starts the app listening on the port in $PORT (default 8080). Save it as a version, then publish again.";
         throw err;
       }
-      if (kind === "static") await writeFile6(join11(dir, "Dockerfile"), STATIC_DOCKERFILE);
+      if (kind === "static") await writeFile6(join12(dir, "Dockerfile"), STATIC_DOCKERFILE);
       const building = await api(c, "GET", `/api/v1/apps/${appId}/publish`).then(
         (j2) => j2.status === "building" && j2.sha === version2.id && Date.now() - Date.parse(j2.heartbeatAt ?? j2.startedAt ?? "") < 3 * 6e4,
         () => false
@@ -33883,7 +34076,7 @@ var frecklesHosting = {
         const mac = process.platform === "darwin" ? ["--no-xattrs", "--no-mac-metadata"] : [];
         report?.("Packing the files");
         await promisify8(execFile6)("tar", [...mac, "-czf", archive, "-C", dir, "."], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
-        const { size } = await stat4(archive);
+        const { size } = await stat5(archive);
         if (size > MAX_UPLOAD) {
           const mb = Math.round(size / 1024 / 1024);
           const err = new Error(`This app is ${mb} MB once packed, and Freckles Hosting takes up to ${Math.round(MAX_UPLOAD / 1024 / 1024)} MB. It was not sent and nothing changed online.`);
@@ -34326,35 +34519,35 @@ COPY . /srv
 EXPOSE 8080
 CMD ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
 `;
-async function leaveKit(app, into = join12(homedir5(), "Downloads")) {
+async function leaveKit(app, into = join13(homedir5(), "Downloads")) {
   const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const safe = appName(app).replace(/[^\w.-]+/g, "-");
-  const work = await mkdtemp2(join12(tmpdir2(), "freckles-kit-"));
-  const dir = join12(work, `${safe}-leave-kit`);
+  const work = await mkdtemp2(join13(tmpdir2(), "freckles-kit-"));
+  const dir = join13(work, `${safe}-leave-kit`);
   try {
-    await mkdir9(join12(dir, "pictures"), { recursive: true });
-    await git(app.path, "bundle", "create", join12(dir, "history.bundle"), "--all");
+    await mkdir9(join13(dir, "pictures"), { recursive: true });
+    await git(app.path, "bundle", "create", join13(dir, "history.bundle"), "--all");
     const versions = await listVersions(app, { limit: 1e4 });
     const newest = versions[0];
     if (newest) {
-      await archiveVersion(app, newest, join12(dir, "code"));
-      await holdBackRisky(join12(dir, "code"));
+      await archiveVersion(app, newest, join13(dir, "code"));
+      await holdBackRisky(join13(dir, "code"));
     }
-    for (const v2 of versions) if (v2.shot && existsSync3(v2.shot)) await cp(v2.shot, join12(dir, "pictures", `${v2.shortId}.png`)).catch(() => void 0);
+    for (const v2 of versions) if (v2.shot && existsSync3(v2.shot)) await cp(v2.shot, join13(dir, "pictures", `${v2.shortId}.png`)).catch(() => void 0);
     await writeFile7(
-      join12(dir, "versions.md"),
+      join13(dir, "versions.md"),
       `# Versions of ${appName(app)}
 
 ${versions.map((v2) => `- **${v2.savedAt.slice(0, 16).replace("T", " ")}** \xB7 ${v2.summary}${v2.detail ? `
   ${v2.detail.replace(/\n/g, " ")}` : ""}`).join("\n")}
 `
     );
-    await mkdir9(join12(dir, "infra"));
-    const own = join12(dir, "code", "Dockerfile");
-    await writeFile7(join12(dir, "infra", "Dockerfile"), existsSync3(own) ? await (await import("node:fs/promises")).readFile(own, "utf8") : STATIC_DOCKERFILE2);
-    await writeFile7(join12(dir, "README.md"), readme(app, versions, app.published?.url));
+    await mkdir9(join13(dir, "infra"));
+    const own = join13(dir, "code", "Dockerfile");
+    await writeFile7(join13(dir, "infra", "Dockerfile"), existsSync3(own) ? await (await import("node:fs/promises")).readFile(own, "utf8") : STATIC_DOCKERFILE2);
+    await writeFile7(join13(dir, "README.md"), readme(app, versions, app.published?.url));
     await mkdir9(into, { recursive: true });
-    const zip = join12(into, `${safe}-leave-kit-${stamp}.zip`);
+    const zip = join13(into, `${safe}-leave-kit-${stamp}.zip`);
     await rm8(zip, { force: true });
     await run8("zip", ["-qr", zip, `${safe}-leave-kit`], { cwd: work, maxBuffer: 64 * 1024 * 1024 });
     return zip;
@@ -34375,7 +34568,7 @@ var ownAzure = {
     if (!account) throw new Error("This computer isn't signed in to Azure. Sign in with az login, then try again.");
     const name = appName(app).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || "app";
     const group = `rg-freckles-${name}`;
-    const dir = await mkdtemp2(join12(tmpdir2(), "freckles-own-"));
+    const dir = await mkdtemp2(join13(tmpdir2(), "freckles-own-"));
     try {
       await archiveVersion(app, version2, dir);
       const heldBack = await holdBackRisky(dir);
@@ -34390,7 +34583,7 @@ var ownAzure = {
         });
         return { url: `https://${host2}`, heldBack };
       }
-      if (!existsSync3(join12(dir, "Dockerfile"))) {
+      if (!existsSync3(join13(dir, "Dockerfile"))) {
         const e = new Error("This app runs its own server, and needs one more file before it can run in Azure.");
         e.agent = "Add a Dockerfile at the root that builds the app and starts it listening on $PORT (default 8080), save it as a version, then try again.";
         throw e;
@@ -34664,9 +34857,9 @@ var TIMELINE_HTML = `<!doctype html>
 
 // packages/mcp/src/shared.ts
 import { execFile as execFile8 } from "node:child_process";
-import { mkdtemp as mkdtemp3, readdir as readdir4, readFile as readFile9, rm as rm9, stat as stat5 } from "node:fs/promises";
+import { mkdtemp as mkdtemp3, readdir as readdir4, readFile as readFile10, rm as rm9, stat as stat6 } from "node:fs/promises";
 import { tmpdir as tmpdir3 } from "node:os";
-import { dirname as dirname3, join as join13, resolve as resolvePath } from "node:path";
+import { dirname as dirname4, join as join14, resolve as resolvePath } from "node:path";
 import { promisify as promisify10 } from "node:util";
 async function online() {
   const c = await readConfig();
@@ -34770,14 +34963,14 @@ async function isEmptyOrMissing(dir) {
     return true;
   }
 }
-async function exists2(path2) {
-  return stat5(path2).then(() => true, () => false);
+async function exists3(path2) {
+  return stat6(path2).then(() => true, () => false);
 }
 async function target(folder, name) {
   const base = resolvePath(folder.replace(/^~/, process.env.HOME ?? "~"));
   if (await isEmptyOrMissing(base)) return base;
-  const inside = join13(base, name.replace(/[^\w.-]+/g, "-"));
-  if (await exists2(inside)) throw new Error(`There's already a folder called ${inside}. Choose another folder.`);
+  const inside = join14(base, name.replace(/[^\w.-]+/g, "-"));
+  if (await exists3(inside)) throw new Error(`There's already a folder called ${inside}. Choose another folder.`);
   return inside;
 }
 var ideaFor = (you) => `from ${(you.split("@")[0] ?? you).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() || "a helper"}`;
@@ -34844,13 +35037,13 @@ async function suggestChange(ref, text) {
 For the agent: nothing changed in the app. Their agent receives it through whats_new.`;
 }
 async function makeCopy(key, dir) {
-  const scratch = await mkdtemp3(join13(tmpdir3(), "freckles-copy-"));
+  const scratch = await mkdtemp3(join14(tmpdir3(), "freckles-copy-"));
   try {
     await git(scratch, "-c", "credential.helper=", "clone", "--quiet", "--depth", "1", withKey(key.cloneUrl, key.token), "app");
-    const from = await git(join13(scratch, "app"), "log", "-1", "--format=%s").catch(() => "");
-    await git(join13(scratch, "app"), "archive", "--format=tar", "-o", join13(scratch, "app.tar"), "HEAD");
+    const from = await git(join14(scratch, "app"), "log", "-1", "--format=%s").catch(() => "");
+    await git(join14(scratch, "app"), "archive", "--format=tar", "-o", join14(scratch, "app.tar"), "HEAD");
     await git(scratch, "init", "--quiet", "-b", "main", dir);
-    await promisify10(execFile8)("tar", ["-xf", join13(scratch, "app.tar"), "-C", dir]);
+    await promisify10(execFile8)("tar", ["-xf", join14(scratch, "app.tar"), "-C", dir]);
     await git(dir, "add", "--all");
     await git(dir, "commit", "--quiet", "-m", `Your own copy of ${key.name}, made from ${key.owner}'s app${from ? ` as it was ("${from}")` : ""}`);
   } finally {
@@ -34900,19 +35093,19 @@ async function sendContribution(app) {
     if (!branch.startsWith("idea/")) return `Saved on this computer. It isn't on an idea, so ${k2.owner} wasn't sent anything.`;
     const idea = branch.slice("idea/".length).replace(/-/g, " ");
     const base = await liveBase(app, branch);
-    const file3 = join13(await mkdtemp3(join13(tmpdir3(), "freckles-send-")), "change.bundle");
+    const file3 = join14(await mkdtemp3(join14(tmpdir3(), "freckles-send-")), "change.bundle");
     try {
       await git(app.path, "bundle", "create", file3, branch, `^${base}`);
-      await upload(c, `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/send`, await readFile9(file3));
+      await upload(c, `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/send`, await readFile10(file3));
     } catch (err) {
       if (/empty bundle/i.test(forAgent(err))) return `Nothing new to send to ${k2.owner}.`;
       throw err;
     } finally {
-      await rm9(dirname3(file3), { recursive: true, force: true });
+      await rm9(dirname4(file3), { recursive: true, force: true });
     }
     const [newest] = await listVersions(app, { limit: 1, branch });
     let picture;
-    if (newest?.shot) picture = await readFile9(newest.shot).then((b) => b.toString("base64"), () => void 0);
+    if (newest?.shot) picture = await readFile10(newest.shot).then((b) => b.toString("base64"), () => void 0);
     await api(c, "POST", `/api/v1/shared/${encodeURIComponent(k2.workspace)}/${encodeURIComponent(k2.appId)}/idea`, {
       idea,
       summary: newest?.summary,
@@ -35103,7 +35296,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.8.0" : "dev";
+var VERSION = true ? "0.8.1" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -35132,7 +35325,7 @@ async function changeableApp(ref, what) {
 }
 async function isDirectory(path2) {
   try {
-    return (await stat6(path2)).isDirectory();
+    return (await stat7(path2)).isDirectory();
   } catch {
     return false;
   }
@@ -35194,10 +35387,41 @@ tool(
   }
 );
 tool(
+  "set_connections",
+  "Say which outside services the app talks to (Stripe, a calendar, a spreadsheet, a newsletter, WhatsApp, an AI service), replacing the list. Freckles draws them on the app's map as one small box that opens to show each, so the person can see who their app shares information with. Call it when the app starts using an outside service, stops using one, or you notice one you hadn't listed. Never put a key or password in it: those live in Keys and passwords. Pass an empty list to clear it.",
+  {
+    app: appRef,
+    connections: external_exports.array(
+      external_exports.object({
+        name: external_exports.string().describe('The service, as the person knows it: "Stripe", "Google Calendar".'),
+        why: external_exports.string().describe(`What the app uses it for, in the person's words: "Takes card payments".`),
+        flow: external_exports.enum(["in", "out", "both"]).optional().describe('Which way information goes: "out" of the app to it, "in" from it, or "both".')
+      })
+    ).max(12)
+  },
+  async ({ app: ref, connections }) => {
+    const app = await changeableApp(ref, "set_connections");
+    const saved = await setConnections(app, connections);
+    const online2 = await tellConnections(app, saved);
+    const names = saved.map((c) => c.name).join(", ");
+    return saved.length ? `Noted what ${appName(app)} talks to: ${names}. They show on its map as one box that opens to show each${online2 ? "" : " (on this computer; Freckles online will have them with the next save)"}.` : "Cleared the outside services.";
+  }
+);
+tool(
+  "check_installable",
+  `Check whether a web app is ready to be put on a phone's home screen like an app (an installable web app): its manifest, the icons phones need (including the iPhone's own), the phone-sized page, and whether its service worker keeps private data off the phone. Says in plain words what is there and what is missing, musts first. Run it after you add or change anything for phones, fix every MUST, and run it again. See best_practices "mobile" for the files to write.`,
+  { app: appRef },
+  async ({ app: ref }) => {
+    const app = await resolveApp(ref);
+    const root = app.preview?.kind === "static" && app.preview.dir ? resolvePath2(app.path, app.preview.dir) : app.path;
+    return describeInstallable(await checkInstallable(root));
+  }
+);
+tool(
   "best_practices",
   `How to build this person's app the way a good engineer would, for someone who isn't one: starting well (what to ask first), software practice, security (OWASP Top 10), how much cloud an app needs and when to add more, writing down decisions and naming milestones, trying ideas safely, and a checklist before going online. Call it with no topic to see the list. Read "start" at the beginning of every new app, "security" before anything private or public-facing, and "launch" before the first publish. Apply it quietly: tell the person only what you did, in one plain sentence.`,
   {
-    topic: external_exports.string().optional().describe("One of: start, build, security, cloud, decisions, ideas, launch. Leave out to list them.")
+    topic: external_exports.string().optional().describe("One of: guide, start, build, security, cloud, decisions, ideas, quality, mobile, launch. Leave out to list them.")
   },
   async ({ topic }) => topicText(topic)
 );
@@ -35326,10 +35550,10 @@ async function monthLine() {
       if (!online2.known) return "";
       [spent, limit, currency] = [online2.spentMinor, online2.limit?.amountMinor, online2.limit?.currency ?? online2.currency];
     } else {
-      const local = await spentMinor();
-      if (!local.known) return "";
+      const local2 = await spentMinor();
+      if (!local2.known) return "";
       const { limit: set2 } = await readWorkspace();
-      [spent, limit, currency] = [local.minor, set2?.amountMinor, set2?.currency ?? "EUR"];
+      [spent, limit, currency] = [local2.minor, set2?.amountMinor, set2?.currency ?? "EUR"];
     }
     return limit ? `${amount(spent, currency)} of ${amount(limit, currency)} this month` : `${amount(spent, currency)} this month`;
   } catch {
