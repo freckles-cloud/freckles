@@ -39392,7 +39392,8 @@ var BUILD_KINDS = ["dockerfile", "buildpacks", "auto"];
 var DATA_KINDS = ["store", "postgres", "files"];
 var TOP_KEYS = ["schema", "name", "services", "data", "domains", "secrets", "alwaysOn"];
 var SERVICE_KEYS = ["name", "kind", "dir", "port", "build"];
-var DATA_KEYS = ["name", "kind"];
+var DATA_KEYS = ["name", "kind", "read"];
+var DATA_READS = ["owner", "everyone"];
 var APP_NAME = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 var PART_NAME = /^[a-z][a-z0-9-]{0,29}$/;
 var DATA_NAME = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
@@ -39534,13 +39535,18 @@ function dataPart(raw, i, say) {
   }
   const label = typeof raw.name === "string" && raw.name ? `The stored information ${quote(raw.name)}` : `Stored information ${i + 1}`;
   const before = { unknown: unknownKeys(raw, DATA_KEYS) };
-  for (const k2 of before.unknown) say(`${label} (data) has a setting Freckles doesn't know, ${quote(k2)}; it has name and kind.`);
+  for (const k2 of before.unknown) say(`${label} (data) has a setting Freckles doesn't know, ${quote(k2)}; it has name, kind and read.`);
   const nameOk = typeof raw.name === "string" && DATA_NAME.test(raw.name);
   if (!nameOk) say(`${label} (data) needs a name of letters, numbers, - and _, up to 40, like bookings.`);
   const kindOk = DATA_KINDS.includes(raw.kind);
   if (!kindOk) say(`${label} (data) has kind ${quote(raw.kind)}; it can be "store" (Freckles' built-in store), "postgres" or "files".`);
-  if (before.unknown.length || !nameOk || !kindOk) return void 0;
-  return { name: raw.name, kind: raw.kind };
+  const readOk = raw.read === void 0 || DATA_READS.includes(raw.read) && raw.kind === "store";
+  if (!readOk)
+    say(
+      raw.kind === "store" || !kindOk ? `${label} (data) has read ${quote(raw.read)}; it can be "owner" (visitors can add, only you and the people who can edit read it back) or "everyone".` : `${label} (data) has read, which only the built-in store (kind: store) has.`
+    );
+  if (before.unknown.length || !nameOk || !kindOk || !readOk) return void 0;
+  return { name: raw.name, kind: raw.kind, ...raw.read !== void 0 ? { read: raw.read } : {} };
 }
 function domain2(raw, say) {
   if (typeof raw !== "string") {
@@ -39598,7 +39604,7 @@ function writeManifest(m2) {
     schema: m2.schema,
     name: m2.name,
     services: m2.services.map(service2),
-    ...m2.data?.length ? { data: m2.data.map((d2) => ({ name: d2.name, kind: d2.kind })) } : {},
+    ...m2.data?.length ? { data: m2.data.map((d2) => ({ name: d2.name, kind: d2.kind, ...d2.read ? { read: d2.read } : {} })) } : {},
     ...m2.domains?.length ? { domains: m2.domains } : {},
     ...m2.secrets?.length ? { secrets: m2.secrets } : {},
     ...m2.alwaysOn ? { alwaysOn: true } : {}
@@ -39981,15 +39987,21 @@ var RISKY = [
   /^\.ssh$/i
 ];
 var SKIP_DIRS2 = /* @__PURE__ */ new Set([".git", "node_modules", ".venv", "__pycache__"]);
-async function holdBackRisky(root) {
+var hiddenInPages = (name, atTop) => name.startsWith(".") && !(atTop && name === ".well-known");
+async function holdBackRisky(root, o = {}) {
   const held = [];
   async function walk(dir) {
     const entries = await readdir3(dir, { withFileTypes: true });
     for (const entry of entries) {
       const full = join10(dir, entry.name);
+      const hidden = o.pagesOnly === true && hiddenInPages(entry.name, dir === root);
       if (entry.isDirectory()) {
         if (SKIP_DIRS2.has(entry.name) || RISKY.some((r2) => r2.test(entry.name))) {
           held.push(relative(root, full));
+          await rm4(full, { recursive: true, force: true });
+          continue;
+        }
+        if (hidden) {
           await rm4(full, { recursive: true, force: true });
           continue;
         }
@@ -39999,7 +40011,7 @@ async function holdBackRisky(root) {
       if (RISKY.some((r2) => r2.test(entry.name))) {
         held.push(relative(root, full));
         await rm4(full, { force: true });
-      }
+      } else if (hidden) await rm4(full, { force: true });
     }
   }
   await walk(root);
@@ -40101,7 +40113,7 @@ var ThisComputer = class {
     if (!check3.ok) throw new Error(check3.because);
     const out = publishedDir(app.id);
     await archiveVersion(app, version2, out);
-    const heldBack = await holdBackRisky(out);
+    const heldBack = await holdBackRisky(out, { pagesOnly: app.preview?.kind !== "command" });
     if (app.preview?.kind === "command") {
       if (app.preview.install) await install(out, app.preview.install);
       await stop(app.id);
@@ -40726,7 +40738,7 @@ async function recentChanges(fullName, branch) {
 
 // packages/publish/src/index.ts
 async function publish(app, version2, provider2) {
-  const { url: url2, heldBack } = await provider2.publish(app, version2);
+  const { url: url2, heldBack, describe } = await provider2.publish(app, version2);
   const publication = {
     provider: provider2.name,
     versionId: version2.id,
@@ -40735,7 +40747,7 @@ async function publish(app, version2, provider2) {
     ...await provider2.spend?.(app)
   };
   await updateSide2(app.id, (side) => ({ ...side, published: publication }));
-  return { app: await loadApp(app.id), publication, heldBack };
+  return { app: await loadApp(app.id), publication, heldBack, describe: describe ?? provider2.describe };
 }
 async function unpublish(app, provider2) {
   await provider2.unpublish(app);
@@ -40818,11 +40830,11 @@ Links into Freckles: after a save that changes something the person can see, aft
 
 Showing the app: after a change the person can see, or when they ask "show me", call show_timeline. Hosts that can draw it show a small timeline with pictures inside the chat; the others get a short table and the link. Show it as it is, with nothing before or after it unless something needs the person to decide.
 
-Sharing: when the person asks to share the app with someone or change who can open it, call share_app (people by email with "use" or "edit", or anyone at their company, anyone with the link, a word, nobody); who_can_open reads it back. If it asks you to confirm before opening the app to anyone with the link, ask the person first. Before writing any login, sign-up or user list, call use_sign_in: apps behind Freckles already know who is signed in, and /_data stores information online.
+Sharing: when the person asks to share the app with someone or change who can open it, call share_app (people by email with "use" or "edit", or anyone at their company, anyone with the link, a word, nobody); who_can_open reads it back. If it asks you to confirm before opening the app to anyone with the link, ask the person first. Before writing any login, sign-up or user list, call use_sign_in: apps behind Freckles already know who is signed in, and /_data stores information online (name each list visitors add to with add_information, so only the owner and editors can read it).
 
 Apps others shared: list_shared_with_me shows them. To work on one with Can edit, call open_shared_app with a folder: versions saved there go to its owner as a proposed change they can keep (say "proposed change" to the person), and only the owner publishes; with copy true it becomes the person's own app. If their proposed change is out of date because the owner changed the app after they started, call update_my_version. With Can use, they can't change it: send the owner the change with suggest_change. When whats_new says someone proposed a change, the owner can keep it on the Freckles page; or call fetch_ideas, show the person the change, and keep_idea only if they want it.
 
-Selling: when an app needs to charge for something (a shop, a booking with a deposit, tickets, a class, a membership), it is a planned milestone, not an afterthought: read best_practices "billing-milestone", offer the person its stages (decide what is sold, connect their Stripe account and add the items, rehearse in Stripe's test mode, the pages a seller needs, a go-live check with one small real purchase refunded, what to watch), name_milestone "Taking payments" at the start of the second and "First real payment" at the end of the fifth, and do not open the app to customers until the go-live check passes. Say plainly that Freckles takes one-time payments only today: no subscriptions, shipping, taxes or discounts. Never build a card form, never store card details and don't suggest another payment service. Call take_payments once (the person's own Stripe account: the money goes straight to them), then add_sale_item for each thing sold. It gives you a script tag and a button for the app's own page; the price is kept in Freckles, not in the page, and the customer pays on Stripe's page and comes back to the page. What was paid is in list_sales_orders; list_sales and change_sale_item show and change what is sold. Say plainly that Stripe charges the person its own fee on every payment and Freckles keeps 2% on the free plans, nothing on Pro. Nothing paid-for should unlock from the address the customer comes back to alone.
+Selling: when an app needs to charge for something (a shop, a booking with a deposit, tickets, a class, a membership), it is a planned milestone, not an afterthought: read best_practices "billing-milestone", offer the person its stages (decide what is sold, connect their Stripe account and add the items, rehearse in Stripe's test mode, the pages a seller needs, a go-live check with one small real purchase refunded, what to watch), name_milestone "Taking payments" at the start of the second and "First real payment" at the end of the fifth, and do not open the app to customers until the go-live check passes. Say plainly that Freckles takes one-time payments only today: no subscriptions, shipping, taxes or discounts. Never build a card form, never store card details and don't suggest another payment service. Call take_payments once (the person's own Stripe account: the money goes straight to them), then add_sale_item for each thing sold. It gives you a script tag and a button for the app's own page; the price is kept in Freckles, not in the page, and the customer pays on Stripe's page and comes back to the page. What was paid is in list_sales_orders; list_sales and change_sale_item show and change what is sold. Say plainly that Stripe charges the person its own fee on every payment and Freckles keeps 2% on the free plans, nothing on the Freckles plan. Nothing paid-for should unlock from the address the customer comes back to alone.
 
 An app the person already keeps in their own git repository is, by default, only shown by Freckles: nothing is copied and theirs is never written to. They can choose to carry on in Freckles: on their Freckles page (Settings) they connect GitHub and press Continue in Freckles for a project, and Freckles copies it itself; then call get_my_app to bring it to this computer (no name lists what Freckles keeps). Or, for an app already on this computer, explain that Freckles will keep its own private copy of the code, wait for their yes, then call continue_in_freckles. When they want their work back in their own project, call send_to_my_repo (a separate line called freckles by default; their main line only with confirm).
 
@@ -41092,7 +41104,7 @@ var site = guide({
   baseline: `static pages, nothing else. On Freckles this is "its pages only": the first rung of "cloud". Underneath it is Azure Static Web Apps, Free plan.`,
   shape: `- Plain HTML, CSS and a little JavaScript, or a static generator that outputs files. No server, no database, no build service of your own.
 - Static Web Apps Free includes globally distributed static content, free automatically renewing certificates and up to 2 custom domains per app, with APIs only as managed HTTP functions. It is "for personal projects".
-- A contact or waiting-list form: first choice is a mailto link or a link to the person's own messaging. If the messages must be kept, use add_information (stored information) and let the owner read them behind sign-in; email the owner only if they ask. A form handler is a few lines of code that run only when someone submits: nothing is awake in between.
+- A contact or waiting-list form: first choice is a mailto link or a link to the person's own messaging. If the messages must be kept, use add_information with the list named (list: "messages"), which makes it owner-only: visitors can send, and only the owner and editors can read them back, on a page behind sign-in; email the owner only if they ask. A form handler is a few lines of code that run only when someone submits: nothing is awake in between.
 - Photos: right size and format, lazy-loaded. The Free plan allows 250 MB per deployed environment (500 MB across all) and 15,000 files; a portfolio rarely needs more.
 - A custom address is the only usual cost (the domain itself): use quote_domain and tell the person the price first.`,
   dont: `- A server, container, container registry, database, CMS or admin panel: the page does not change when somebody visits, so none of them has a job.
@@ -41156,8 +41168,8 @@ var booking = guide({
   kind: "bookings or appointments (time slots, confirmations, reminders, an owner's list)",
   needs: `Show free times, let a visitor take one, never double-book, confirm by email, let the owner see and change the list (privately), and let a visitor cancel. Times must be right across time zones and clock changes. A few hundred bookings a month is a big month for most small businesses.`,
   baseline: `pages, stored information for the bookings, a confirmation email, and an owner's list behind sign-in. No always-on server.`,
-  shape: `- The page and its form are static. A booking is saved with add_information (stored information), written so that two people cannot take the same slot (check and write in one step, or refuse the second). Underneath that is plain Azure table storage: $0.045 per GB-month and $0.00036 per 10,000 operations.
-- The owner's list is a private page behind use_sign_in (and share_app for who may open the app). Show only the owner's own business, never other people's bookings to visitors.
+  shape: `- The page and its form are static. A booking is saved with add_information (stored information), naming the list (list: "bookings") so it is owner-only: visitors can book, and only the owner and editors read the bookings back. Write it so that two people cannot take the same slot (check and write in one step, or refuse the second). To show free times, keep a second list everyone may read (read: "everyone") that holds only the taken times, never names or contact details. Underneath that is plain Azure table storage: $0.045 per GB-month and $0.00036 per 10,000 operations.
+- The owner's list is a private page behind use_sign_in (and share_app for who may open the app) that reads the owner-only list: the gateway lets the owner and editors read it and refuses everyone else, even someone who guesses the address. Never show other people's bookings to visitors.
 - Email: one confirmation to the visitor and one note to the owner, sent when the booking is made. Underneath that is Azure Communication Services Email: $0.00025 per email plus $0.00012 per MB sent. It needs its own Email resource and a verified sending domain (SPF and DKIM). The Azure-managed sender address has far lower limits (5 emails a minute and 10 an hour, and that cannot be raised), so use it only to try things out. A custom domain starts at 30 a minute and 100 an hour and can be raised.
 - Reminders: only if the person wants them; send them from one scheduled run a day, not from a server that waits for the clock. If Freckles cannot schedule it yet, say so and offer a manual or "on booking" email instead of adding something always on.
 - Store times in one standard form (UTC) with the place's time zone beside them, and show them in the visitor's own time.
@@ -41456,13 +41468,13 @@ var BILLING_MILESTONE = {
 
 **What Freckles supports today, plainly (ADR 0026 and the payments how-to).**
 - **One-time payments only.** A person can sell several things, each with a price, and customers pay on Stripe's own page. Freckles does **not yet** support subscriptions or recurring payments, shipping addresses or shipping costs, taxes (nothing is calculated or added), or discounts and coupons. Say so up front instead of promising them. If someone needs a membership or a subscription, say that recurring billing is not built yet; the honest options are a one-time payment for a fixed period that they ask the member to repeat by hand, or waiting. Never build a workaround with another payment service.
-- **The amounts.** Up to 50 items an app; at least 0.50 each; the currencies USD, EUR, GBP, CAD, AUD, NZD, CHF, SEK, NOK and DKK; 1 to 20 of an item per order; one order up to 5,000 in the item's currency (higher only on Pro, with Stripe's form finished). One visitor can start 12 checkouts and one app 300 in ten minutes.
+- **The amounts.** Up to 50 items an app; at least 0.50 each; the currencies USD, EUR, GBP, CAD, AUD, NZD, CHF, SEK, NOK and DKK; 1 to 20 of an item per order; one order up to 5,000 in the item's currency (higher only on the Freckles plan, with Stripe's form finished). One visitor can start 12 checkouts and one app 300 in ten minutes.
 - **Digital goods and access are manual.** The page the customer comes back to proves nothing, and a way for the app to ask "was this paid?" is not built. So never unlock a download or a private page automatically; the person sees the order in list_sales_orders and sends what was bought.
 - **Refunds and disputes are done in the person's own Stripe account**, not in Freckles; Freckles only marks the order as refunded, partly refunded or disputed.
 
 **Stage A: decide what is sold and how.** Ask, one or two at a time: what exactly is sold (each thing, its price, its currency), whether it is a single payment or something that repeats (see the limits above), how many can be bought at once, and what the customer gets and when. Then say back, in plain words:
 - **Who gets the money:** the person's own Stripe account, which they do not need to have beforehand: Stripe's hosted form creates it (or connects the one they already have) in a few minutes. Freckles never holds the money. They do it on Stripe's page; Freckles never sees their bank details.
-- **What it costs:** Stripe charges the person's account its own fee on every payment (the person's Stripe pricing page has the exact figure for their country; "arch-store" has the figure that was read on its date and says what was not checked). On top, Freckles keeps 2% of each payment on the Trial and Free plans and nothing on Pro (call my_plan to see which they are on). There is no monthly charge for taking payments.
+- **What it costs:** Stripe charges the person's account its own fee on every payment (the person's Stripe pricing page has the exact figure for their country; "arch-store" has the figure that was read on its date and says what was not checked). On top, Freckles keeps 2% of each payment on the Trial and Free plans and nothing on the Freckles plan (call my_plan to see which they are on). There is no monthly charge for taking payments.
 - **A decision worth writing down** (see "decisions"): what is sold, in which currency, and that payments go through Freckles' bridge, in docs/decisions.
 - Exit test: the person can say, in one sentence each, what is sold and for how much, who receives the money, and what it costs per sale; and they have said yes to one-time payments only for now.
 
@@ -41513,7 +41525,7 @@ Exit test: a real payment and its refund both seen in list_sales_orders, every s
 - https://vat-one-stop-shop.ec.europa.eu/one-stop-shop_en: the EU One Stop Shop for VAT and the 10,000 EUR yearly threshold for cross-border sales to consumers.
 - https://www.gov.uk/online-and-distance-selling-for-businesses: what a UK seller must tell customers before they buy, the 14-day cancellation right (12 months if never told), and exceptions (the page gives no refund timeframe).
 - https://www.gov.uk/register-for-vat: the UK VAT registration threshold of 90,000 pounds taxable turnover in 12 months.
-- Freckles' own: ADR 0026 and the payments how-to (what the bridge does and does not do, its limits, and that it has never been run against Stripe's real Connect payments), ADR 0019 and pricing.ts (the fee: 2% on Trial and Free, nothing on Pro), and "arch-store" (Stripe's own fee, with its date).
+- Freckles' own: ADR 0026 and the payments how-to (what the bridge does and does not do, its limits, and that it has never been run against Stripe's real Connect payments), ADR 0019, ADR 0029 and pricing.ts (the fee: 2% on Trial and Free, nothing on the Freckles plan), and "arch-store" (Stripe's own fee, with its date).
 
 **What could not be verified, so say it plainly and never guess:** (1) Freckles' bridge has only been tested against fakes, never against Stripe's real Connect accounts in test or live mode, so the first rehearsal may find something; (2) whether a person can rehearse in Stripe's test mode on their own account through Freckles; (3) whether items made in a rehearsal carry over to live; (4) whether Freckles' 2% share comes back to the person on a refund (Stripe's processing fee does not); (5) VAT and sales tax beyond the EU One Stop Shop basics and the UK registration threshold, including US sales tax, digital-goods rules and other countries; (6) the EU and UK refund deadlines, which the pages above do not give; (7) the national equivalent of the consumer-rights pages in the person's country, which you should look up and cite with its fetch date rather than guess; (8) that the exceptions listed above are complete.
 
@@ -41613,6 +41625,7 @@ Then:
 - Decide for every page and every action: who may use it? Check it on the server, not by hiding a button. A page the owner needs (a list of bookings, an admin screen) must refuse everyone else, even someone who guesses the address.
 - Don't write your own sign-in. Call use_sign_in first: apps behind Freckles already know who is signed in. Use that, and use share_app for who may open the app at all.
 - A person must only ever reach their own records. When a record has an id in the address, check it belongs to whoever is asking.
+- Anything visitors send through the built-in store (bookings, contact or enquiry forms, sign-ups, orders) goes in an owner-only list: add_information with list (or read: owner in freckles.yaml). Visitors can still add; only the owner and the people who can edit read it back, and anyone else's GET /_data/<list> is refused. Use read: "everyone" only for what is meant to be public, with no personal details in it.
 
 **2. Misconfiguration (#2).**
 - Nothing in the app should be on by default that isn't needed: no sample accounts, debug pages, directory listings, or verbose error pages online.
@@ -41656,11 +41669,11 @@ Prove it, don't assume it: the "quality" gate has you try each private page sign
 
 **The ladder. Climb one step only when the step below can't do the job.**
 1. **Its pages only.** A static site. Free, fast, nothing to look after. Enough for a brochure, a menu, a landing page, a calculator that runs in the browser.
-2. **Stored information.** When the app must remember what people send (bookings, messages, orders): add_information and the built-in store. It stays inside the app's own space. Don't pick a database product; say "a place to keep what people send".
+2. **Stored information.** When the app must remember what people send (bookings, messages, orders): add_information and the built-in store, naming each list visitors add to so it is owner-only (they can send; only the owner and editors read it back). It stays inside the app's own space. Don't pick a database product; say "a place to keep what people send".
 3. **Email and reminders.** When the owner or customers must be told something. Check spending first.
 4. **Files people send.** Pictures and documents: only if a real feature needs it, with size and type limits.
 5. **Something that runs by itself.** Scheduled summaries, cleanups, reminders.
-6. **Its own address.** A name people type. Pro plan: check my_plan, quote_domain or use_my_domain.
+6. **Its own address.** A name people type. On the Freckles plan (check my_plan): quote_domain or use_my_domain.
 
 Never add a step "just in case". Never offer a part that has nothing to do with what the app is for.
 
@@ -42046,7 +42059,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.9.0" : "dev";
+var COMPANION_VERSION = true ? "0.10.0" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
@@ -42354,6 +42367,15 @@ async function tellConnections(app, connections) {
   if (!c.token || !appId) return false;
   return api2(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/connections`, { connections }).then(() => true, () => false);
 }
+async function tellListRead(app, list4, read2) {
+  const c = await readConfig();
+  if (!c.token) {
+    await updateSide2(app.id, (s) => ({ ...s, listReads: [...(s.listReads ?? []).filter((l) => l.list.toLowerCase() !== list4.toLowerCase()), { list: list4, ...read2 ? { read: read2 } : {} }] }));
+    return void 0;
+  }
+  const { appId } = await ensureRegistered(c, app);
+  return (await api2(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/data`, { list: list4, read: read2 })).read;
+}
 async function tellGoal(app, goal) {
   const c = await readConfig();
   const appId = (await readSide(app.id))?.cloud?.appId;
@@ -42425,6 +42447,10 @@ async function sync(app, options = {}) {
     const side = await readSide(app.id);
     if (side?.goal) await tellGoal(app, side.goal);
     if (side?.connections?.length) await tellConnections(app, side.connections);
+    if (side?.listReads?.length) {
+      for (const l of side.listReads) await api2(c, "PUT", `/api/v1/apps/${encodeURIComponent(appId)}/data`, l);
+      await updateSide2(app.id, (s) => ({ ...s, listReads: void 0 }));
+    }
     const idea = await currentIdea(app);
     if (idea) {
       const mine = (await ideaVersions(app, idea)).slice(-(options.versions ?? 1));
@@ -42471,6 +42497,11 @@ COPY . /srv
 EXPOSE 8080
 CMD ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
 `;
+function hostedDescription(kind) {
+  if (kind === "blob") return "On Freckles Hosting, as pages kept in Freckles' storage: always on, so they open at once with nothing to wake, and free within the monthly allowance.";
+  if (kind === "site") return "On Freckles Hosting, as pages that are always on: they open at once with nothing to wake, and free within the monthly allowance.";
+  return frecklesHosting.describe;
+}
 var MAX_UPLOAD = Number(process.env.FRECKLES_MAX_UPLOAD_BYTES) || 100 * 1024 * 1024;
 var PUBLISH_WAIT_MS = Number(process.env.FRECKLES_PUBLISH_WAIT_MS) || 6e4;
 var POLL_MS = Number(process.env.FRECKLES_POLL_MS) || 3e3;
@@ -42557,9 +42588,9 @@ var frecklesHosting = {
       const files = manifest?.plan.dir ? join16(dir, manifest.plan.dir) : dir;
       if (manifest?.plan.dir && !await stat6(files).then((i) => i.isDirectory(), () => false))
         throw agentError(`This app's ${MANIFEST_FILE} names a folder that isn't in this version, so it wasn't published.`, `${MANIFEST_FILE} says the part "${manifest.plan.service}" is in the folder "${manifest.plan.dir}", which this version doesn't have. Fix dir in ${MANIFEST_FILE}, save a version, then publish again.`);
-      const heldBack = await holdBackRisky(files);
       const kind = manifest ? manifest.plan.kind : saved ? saved.kind : app.preview?.kind === "command" ? "container" : "static";
       const port = manifest ? manifest.plan.port : saved ? saved.port : app.preview?.kind === "command" ? app.preview.port : 8080;
+      const heldBack = await holdBackRisky(files, { pagesOnly: kind === "static" });
       if (kind === "container" && !existsSync3(join16(files, "Dockerfile"))) {
         const err = new Error("This app runs its own server, and it needs one more file before it can be published.");
         err.agent = "Publishing an app with a server on Freckles Hosting needs a Dockerfile at the root of the published folder. Add one that installs dependencies, builds, and starts the app listening on the port in $PORT (default 8080). Save it as a version, then publish again.";
@@ -42614,7 +42645,7 @@ var frecklesHosting = {
           if (err instanceof NotConnected || ++failures >= 3) throw err;
           continue;
         }
-        if (job.status === "live" && job.url) return { url: job.url, heldBack };
+        if (job.status === "live" && job.url) return { url: job.url, heldBack, describe: hostedDescription(job.hostKind) };
         if (job.status === "failed") {
           const err = new Error(`Publishing didn't work${job.step === "The build didn't work" ? ": the app couldn't be built" : ""}. What's live hasn't changed.`);
           err.agent = job.detail ?? "No detail was recorded.";
@@ -42796,10 +42827,10 @@ async function myPlan() {
   const price = `$${(p2.priceMinor / 100).toFixed(0)} a month`;
   if (p2.freckles && p2.standing !== "owner") {
     const f2 = p2.freckles;
-    if (f2.onPlan) return `They're on the Freckles plan: ${price} plus what their apps use, ${apps}, under a spending limit they chose. Every charge is announced two days before. To change the card call manage_billing.`;
-    const old = f2.proUntil ? ` Their old Pro runs to ${f2.proUntil.slice(0, 10)} and won't renew.` : "";
-    const where = p2.standing === "trial" ? `free 30 days (${p2.trialDaysLeft} left)` : p2.standing === "pro" ? "old Pro plan" : "free plan";
-    return `They're on the ${where}: ${apps}. The Freckles plan is ${price} plus what their apps use, with a limit they choose.${old}${f2.offered ? " Offer go_pro only if they ask or hit this limit: it gives them a link to their plan page, where they accept the terms, choose a limit and pay on Stripe's own page." : ` ${f2.why ?? "It isn't open yet."}`}`;
+    if (f2.onPlan) return `They're on the Freckles plan: ${price} plus what their apps use, ${apps}, under a spending limit they chose. Every charge is announced two days before. To change the card call manage_billing; to leave, they cancel it on their plan page.`;
+    const old = f2.proUntil ? ` Their old paid plan runs to ${f2.proUntil.slice(0, 10)} and won't renew.` : "";
+    const where = p2.standing === "trial" ? `free 30 days (${p2.trialDaysLeft} left)` : p2.standing === "pro" ? "old paid plan" : "free plan";
+    return `They're on the ${where}: ${apps}. The Freckles plan is ${price} plus what their apps use, with a limit they choose.${old}${f2.offered ? " Offer upgrade_plan only if they ask or hit this limit: it gives them a link to their plan page, where they accept the terms, choose a limit and pay on Stripe's own page." : ` ${f2.why ?? "It isn't open yet."}`}`;
   }
   switch (p2.standing) {
     case "owner":
@@ -42807,20 +42838,21 @@ async function myPlan() {
     case "pro":
       return `They're on Pro: ${apps}, their own addresses, and no fee on payments. Paid until ${p2.proRenewsAt?.slice(0, 10) ?? "the end of the month"}, then it renews. To change the card or cancel, call manage_billing.`;
     case "trial":
-      return `They're in their free 30 days (${p2.trialDaysLeft} left): ${apps}. After that one app stays online and the others are paused, never deleted. Pro (${price}) keeps everything online.${p2.proOffered ? " Offer go_pro only if they ask or need it." : ""}`;
+      return `They're in their free 30 days (${p2.trialDaysLeft} left): ${apps}. After that one app stays online and the others are paused, never deleted. Pro (${price}) keeps everything online.${p2.proOffered ? " Offer upgrade_plan only if they ask or need it." : ""}`;
     default:
-      return `They're on the free plan: ${apps}; the rest of their apps are paused, never deleted. Pro (${price}) puts them all online and adds their own addresses.${p2.proOffered ? " Offer go_pro only if they ask or hit this limit." : " Pro isn't open yet: say so if they ask."}`;
+      return `They're on the free plan: ${apps}; the rest of their apps are paused, never deleted. Pro (${price}) puts them all online and adds their own addresses.${p2.proOffered ? " Offer upgrade_plan only if they ask or hit this limit." : " Pro isn't open yet: say so if they ask."}`;
   }
 }
-async function goPro() {
+async function upgradePlan() {
   const c = await signedIn();
   const plan = await api2(c, "GET", "/api/v1/plan");
   if (plan.freckles) {
     const f2 = plan.freckles;
     const price = `$${(plan.priceMinor / 100).toFixed(0)}`;
+    if (plan.standing === "owner") return "They run Freckles: everything is already included. Nothing to upgrade.";
     if (f2.onPlan) return "They're already on the Freckles plan. To change the card call manage_billing.";
     if (!f2.offered) return `The Freckles plan can't be started right now: ${f2.why ?? "it isn't open yet."} Nothing was charged.`;
-    return `Pro isn't sold any more: the Freckles plan replaced it. Give the person this link, word for word: ${c.url}/settings#plan
+    return `The paid plan is the Freckles plan. Give the person this link, word for word: ${c.url}/settings#plan
 It's ${price} a month plus what their apps use, with a spending limit they choose ($${(f2.defaultLimitMinor / 100).toFixed(0)} to start). On that page they read and accept the terms, choose the limit, and pay the first ${price} on Stripe's own page. Freckles never sees their card. Never accept the terms or choose the limit for them. Nothing has been charged yet. Afterwards call my_plan to confirm.`;
   }
   const { url: url2 } = await api2(c, "POST", "/api/v1/billing/pro");
@@ -42829,7 +42861,13 @@ It's $15 for the first month, paid now on Stripe's own page, then every month un
 }
 async function manageBilling() {
   const c = await signedIn();
+  const plan = await api2(c, "GET", "/api/v1/plan").catch(() => void 0);
   const { url: url2 } = await api2(c, "POST", "/api/v1/billing/manage");
+  if (plan?.freckles) {
+    return plan.freckles.onPlan ? `Give the person this link, word for word: ${url2}
+On Stripe's page they can change their card and see invoices. To leave the Freckles plan they cancel it on their plan page (${c.url}/settings#plan): it runs to the end of the month already paid for, and nothing is deleted.` : `Give the person this link, word for word: ${url2}
+On Stripe's page they can change their card and see invoices for their old paid plan, which runs to the end of the month already paid for and won't renew.`;
+  }
   return `Give the person this link, word for word: ${url2}
 On Stripe's page they can change their card, see invoices, or cancel Pro. If they cancel, Pro runs to the end of the month already paid for.`;
 }
@@ -42837,7 +42875,7 @@ async function takePayments() {
   const c = await signedIn();
   const status = await api2(c, "GET", "/api/v1/payments");
   if (!status.offered) return "Taking payments isn't switched on in Freckles yet. Tell the person it's coming, and don't build payments some other way.";
-  if (status.connected) return `Payments are already connected: the person's own Stripe account receives the money. Use add_sale_item for each thing they sell: it gives you the few lines that let the app's own page take payment (or sell_on_page for one link to send around). Freckles keeps ${status.feeBp / 100}% of each payment${status.feeBp ? " (it's free on Pro)" : ""}; Stripe's own fees are the person's, as for any Stripe account.
+  if (status.connected) return `Payments are already connected: the person's own Stripe account receives the money. Use add_sale_item for each thing they sell: it gives you the few lines that let the app's own page take payment (or sell_on_page for one link to send around). Freckles keeps ${status.feeBp / 100}% of each payment${status.feeBp ? " (nothing on the Freckles plan)" : ""}; Stripe's own fees are the person's, as for any Stripe account.
 ${BILLING_NEXT.connect}`;
   const { url: url2 } = await api2(c, "POST", "/api/v1/payments/connect");
   return `Give the person this link to connect their Stripe account, word for word: ${url2}
@@ -42853,7 +42891,7 @@ async function sellOnPage(app, sale) {
   return [
     `Payment page for ${sale.name} (${symbol2(sale.currency)}${(amountMinor / 100).toFixed(2)}): ${r2.url}`,
     "Make the app's button or link go to that address. The customer pays on Stripe's page, the money goes to the person's own Stripe account, and they come back to the app afterwards.",
-    r2.feeMinor ? `Freckles keeps ${symbol2(sale.currency)}${(r2.feeMinor / 100).toFixed(2)} of each payment; it's free on Pro.` : "Freckles keeps nothing from these payments.",
+    r2.feeMinor ? `Freckles keeps ${symbol2(sale.currency)}${(r2.feeMinor / 100).toFixed(2)} of each payment; it keeps nothing on the Freckles plan.` : "Freckles keeps nothing from these payments.",
     "This one address is for this price, and Stripe stops honouring it after about a day: if the price changes, make a new one. Never put a card form in the app itself.",
     r2.item ? `It is also kept as the item "${r2.item.id}" in the app, so what is paid shows in list_sales_orders. For a button on one of the app's own pages, use add_sale_item instead: the page asks for a fresh payment page when the customer clicks, so nothing expires.` : "",
     BILLING_NEXT.link
@@ -42873,7 +42911,7 @@ function bridgeSnippet(i) {
   ].join("\n");
 }
 function feesLine(feeBp) {
-  return `Fees: Stripe charges the person's own Stripe account its usual fee on every payment (roughly 1.5% to 3% plus a few cents, depending on their country and the card; Stripe's pricing page for their country has the exact figure). On top of that Freckles keeps ${feeBp ? `${feeBp / 100}% on the free plans` : "nothing"}${feeBp ? " and nothing on Pro" : " (Pro)"}. Refunds and disputes are the person's, in their Stripe account; Freckles never holds the money. A single order can't come to more than 5,000 in the item's currency unless the person is on Pro with Stripe's form finished.`;
+  return `Fees: Stripe charges the person's own Stripe account its usual fee on every payment (roughly 1.5% to 3% plus a few cents, depending on their country and the card; Stripe's pricing page for their country has the exact figure). On top of that Freckles keeps ${feeBp ? `${feeBp / 100}% on the free plans` : "nothing"}${feeBp ? " and nothing on the Freckles plan" : " (the Freckles plan)"}. Refunds and disputes are the person's, in their Stripe account; Freckles never holds the money. A single order can't come to more than 5,000 in the item's currency unless the person is on the Freckles plan with Stripe's form finished.`;
 }
 async function addSaleItem(app, item) {
   const c = await signedIn();
@@ -43167,7 +43205,7 @@ var ownAzure = {
     const dir = await mkdtemp2(join17(tmpdir2(), "freckles-own-"));
     try {
       await archiveVersion(app, version2, dir);
-      const heldBack = await holdBackRisky(dir);
+      const heldBack = await holdBackRisky(dir, { pagesOnly: app.preview?.kind !== "command" });
       await run8("az", ["group", "create", "-n", group, "-l", "eastus2", "--tags", "freckles:moved-out=true", "-o", "none"]);
       if (app.preview?.kind !== "command") {
         await run8("az", ["staticwebapp", "create", "-n", `swa-${name}`, "-g", group, "-l", "eastus2", "--sku", "Free", "-o", "none"]).catch(() => void 0);
@@ -43803,7 +43841,7 @@ async function onlineInformation(where, which) {
 ${rows.map((r2) => `${r2.at.slice(0, 16).replace("T", " ")}${r2.by ? ` ${r2.by}` : ""}  ${JSON.stringify(r2.body)}`).join("\n")}` : `Nothing in ${which} online yet.`;
   }
   return d2.collections.length ? `It has remembered, online:
-${d2.collections.map((x) => `${x.name} \u2014 ${x.records} record${x.records === 1 ? "" : "s"}`).join("\n")}` : "Nothing stored online yet.";
+${d2.collections.map((x) => `${x.name} \u2014 ${x.records} record${x.records === 1 ? "" : "s"}${x.read === "owner" ? " (only you and the people who can edit can read it)" : ""}`).join("\n")}` : "Nothing stored online yet.";
 }
 function signInGuide(stack) {
   const parts = {
@@ -43816,7 +43854,8 @@ function signInGuide(stack) {
       'if (me?.role === "edit") document.querySelector("#admin").hidden = false;',
       "// Stored information, online too: each record is stamped with who added it.",
       'await fetch("/_data/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ day: "Mon" }) });',
-      'const { records } = await fetch("/_data/bookings").then((r) => r.json());',
+      "// An owner-only list (add_information with list): visitors POST, only the owner and editors GET; anyone else gets 403.",
+      'if (me?.role === "edit") { const { records } = await fetch("/_data/bookings").then((r) => r.json()); }',
       "```"
     ].join("\n"),
     node: [
@@ -43869,7 +43908,7 @@ function signInGuide(stack) {
     "- x-freckles-app: the app's id",
     "- x-freckles-timestamp: when Freckles signed the request, in whole seconds since 1970",
     "- x-freckles-signature-v2: HMAC-SHA256, in hex, of `v2|${x-freckles-timestamp}|${host.toLowerCase()}|${METHOD}|${app}|${team}|${user}|${role}|${x-freckles-name as sent}` (the header values joined by |, the name still URI-encoded exactly as it arrived; host is the address the visitor used, which the app sees as x-forwarded-host; METHOD is the request's method in upper case) with the secret in the environment variable FRECKLES_APP_SECRET. A server compares it in constant time, and rejects a timestamp more than 60 seconds old, before trusting the other headers. The older x-freckles-signature (no time, address or name in it) can be replayed: don't rely on it.",
-    "From the app's own pages, GET /_freckles/me answers { email, name, team, role } for whoever is looking, so even a static page can greet people by name. /_data/<collection> stores information online (POST a JSON record, GET { records }), the same shape as on this computer; records are stamped with who added them, and only that person or someone who can edit may change them.",
+    "From the app's own pages, GET /_freckles/me answers { email, name, team, role } for whoever is looking, so even a static page can greet people by name. /_data/<collection> stores information online (POST a JSON record, GET { records }), the same shape as on this computer; records are stamped with who added them, and only that person or someone who can edit may change them. A list that holds what visitors send (bookings, enquiries, sign-ups) should be owner-only: name it with add_information (list) and visitors can still POST, but only the owner and editors can GET it (anyone else gets 403), so build the owner's list as a page for role edit.",
     "On this computer, and for an app whose address isn't behind Freckles' sign-in yet, the headers are absent: treat that as nobody signed in, and keep every page working. Choose who may open the app with share_app, not in code.",
     "",
     ...chosen
@@ -43892,7 +43931,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.9.0" : "dev";
+var VERSION = true ? "0.10.0" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -44401,11 +44440,11 @@ tool(
         return `Still building: the files are uploaded and Freckles is building them, which can take a few minutes. Freckles will tell you when it is live; call whats_new in a little while. Tell the person it's on its way, and don't say it's live until you've heard.`;
       throw err;
     }
-    const { publication, heldBack } = published;
+    const { publication, heldBack, describe } = published;
     const page = await appPath(app);
     return [
       `Published: ${publication.url}`,
-      where.describe,
+      describe,
       `Showing: ${chosen.summary}`,
       heldBackMessage(heldBack),
       page ? (await linkLine(page, "What it's made of and what it costs")).trim() : ""
@@ -44446,18 +44485,29 @@ tool(
   [
     "Give an app somewhere to remember things \u2014 bookings, enquiries, a list people add to. Do this before writing a page that needs to save anything.",
     "Once it exists, the published app can use it from its own pages with no configuration and no key:",
-    "  POST /_data/<list>   with a JSON body \u2014 saves one record",
-    "  GET  /_data/<list>   \u2014 returns { records: [{ id, at, body }] }, newest first",
-    "The list name is anything you choose, e.g. /_data/bookings. Warn the user that anyone who can open their app can add to it and read it back: fine for a booking form, wrong for anything private unless the app is shared only with the right people (share_app).",
-    "On Freckles Hosting the same address works online, in Freckles' built-in store, and each record is stamped with who added it when they signed in (see use_sign_in)."
+    "  POST /_data/<list>   with a JSON body \u2014 saves one record, and answers { saved } (only that record)",
+    "  GET  /_data/<list>   \u2014 returns { records: [{ id, at, by, body }] }, newest first",
+    "The list name is anything you choose, e.g. /_data/bookings.",
+    `Who can read a list back: name it here with list, and Freckles makes a new list owner-only (read: "owner"): everyone who can open the app can still add to it, but only the owner and the people who can edit the app read it; anyone else's GET is 403. Use that for ANYTHING visitors send (bookings, contact or enquiry forms, sign-ups, orders, messages): their names and details must never reach other visitors. Build the owner's list as a page behind use_sign_in that GETs it (the owner and editors are let in), and keep a separate list everyone may read only for what visitors truly need to see (taken time slots without names, read: "everyone").`,
+    'read: "everyone" (anyone who can open the app reads every record) is only for things meant to be public, like a guestbook or a shared list. A list never named here stays as it was: readable by anyone who can open the app, and a list already in use is left as it is unless you say read.',
+    "On Freckles Hosting the same address works online, in Freckles' built-in store, and each record is stamped with who added it when they signed in (see use_sign_in). In freckles.yaml the same setting is read: owner on a data entry with kind: store."
   ].join("\n"),
-  { app: appRef },
-  async ({ app: ref }) => {
+  {
+    app: appRef,
+    list: external_exports.string().optional().describe("The list the pages will use, e.g. bookings. Name each list visitors add to, so Freckles can keep it owner-only."),
+    read: external_exports.enum(["owner", "everyone"]).optional().describe('Who can read the list back. "owner": only the owner and editors (visitors can still add). "everyone": anyone who can open the app. Leave out for Freckles to decide: a new list is owner-only, one in use stays as it is.')
+  },
+  async ({ app: ref, list: name, read: read2 }) => {
     const app = await changeableApp(ref, "add_information");
     const online2 = await hostedData(app) ? " Online, on Freckles Hosting, the app already has it: the same /_data addresses keep records in Freckles, stamped with who added them." : "";
-    if (await hasInformation(app)) return `It already has somewhere to remember things.${online2}`;
-    await addInformation(app);
-    return `Done. Pages can now POST to /_data/<list> and GET it back. Anyone who can open the app can do both.${online2}`;
+    const had = await hasInformation(app);
+    if (!had) await addInformation(app);
+    const where = had ? "It already has somewhere to remember things." : "Done. Pages can now POST to /_data/<list> and GET it back.";
+    if (!name) return `${where} Anyone who can open the app can add and read back every list until you name a list here with list (visitors' details belong in an owner-only list).${online2}`;
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/i.test(name)) return `"${name}" isn't a name a list can have: letters, numbers, - and _ only, up to 40, like bookings.`;
+    const now = await tellListRead(app, name, read2);
+    const said = now === void 0 ? `Who can read /_data/${name} is kept with the app and set in Freckles online on the next save once this computer is connected (connect_freckles)${read2 ? `: ${read2 === "owner" ? "only the owner and editors" : "everyone who can open the app"}` : ": a new list becomes owner-only"}.` : now === "owner" ? `/_data/${name} is owner-only: everyone who can open the app can add to it, and only the owner and the people who can edit the app can read it back (anyone else's GET gets 403). Read it on a page behind use_sign_in, or with list_information.` : `/_data/${name} can be read back by anyone who can open the app${read2 ? "" : ', because it was already in use; say read: "owner" to keep it for the owner and editors'}.`;
+    return `${where} ${said} On this computer every list reads back as before, since only you use it here.${online2}`;
   }
 );
 tool(
@@ -44775,25 +44825,22 @@ tool(
 );
 tool(
   "my_plan",
-  "Say where the person's plan stands: the free 30 days (and how many are left), the free plan, or Pro, with how many apps can be online. Call it when they ask about limits, price or why an app was paused, and before suggesting they pay for anything.",
+  "Say where the person's plan stands: the free 30 days (and how many are left), Free, or the Freckles plan, with how many apps can be online and what it costs. Call it when they ask about limits, price or why an app was paused, and before suggesting they pay for anything.",
   {},
   async () => myPlan()
 );
-tool(
-  "go_pro",
-  "Give the person the link to start the paid plan. Normally that is Pro ($15 a month, paid upfront on Stripe's own page): all their apps online, their own addresses, no fee on payments. Where the Freckles plan is on it replaces Pro ($9 a month plus what their apps use, under a limit they choose), and this gives the link to their plan page, where they accept the terms, choose the limit and pay on Stripe's own page. Only when they ask, or when they've run into the free limit and chosen to pay. Never start it for them, and never accept terms or choose a limit for them.",
-  {},
-  async () => goPro()
-);
+var UPGRADE_PLAN = "Give the person the link to start the paid plan, the Freckles plan: $9 a month plus what their apps use, under a spending limit they choose ($20 to start), with all their apps online, their own addresses and no fee on payments. The link is their plan page, where they read and accept the terms, choose the limit and pay on Stripe's own page. Only when they ask, or when they've run into the free limit and chosen to pay. Never start it for them, and never accept terms or choose a limit for them. Call my_plan first if you're unsure what they're on.";
+tool("upgrade_plan", UPGRADE_PLAN, {}, async () => upgradePlan());
+tool("go_pro", `The old name of upgrade_plan, kept so older instructions still work; it does exactly the same. Prefer upgrade_plan. ${UPGRADE_PLAN}`, {}, async () => upgradePlan());
 tool(
   "manage_billing",
-  "Give a person on Pro or the Freckles plan the link to Stripe's page for changing their card, seeing invoices or (Pro) cancelling.",
+  "Give a person on the Freckles plan the link to Stripe's page for changing their card and seeing invoices. The answer says how they leave the plan (on the Freckles plan, from their plan page).",
   {},
   async () => manageBilling()
 );
 tool(
   "take_payments",
-  `Connect the person's Stripe account so their apps can take payments. Gives you the link for them to open (Stripe asks for their details on its own page, and the money from their customers goes straight to them), or says it's already ready. Use this, then add_sale_item for each thing the app sells, whenever an app needs to charge for something: never build a card form or hold payment details in the app. Taking payments is a planned milestone with stages and exit tests (best_practices "billing-milestone"): offer the person the stages before connecting, and today only one-time payments are supported (no subscriptions, shipping, taxes or discounts). Free to use; Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card) and Freckles keeps 2% on the free plans and nothing on Pro.`,
+  `Connect the person's Stripe account so their apps can take payments. Gives you the link for them to open (Stripe asks for their details on its own page, and the money from their customers goes straight to them), or says it's already ready. Use this, then add_sale_item for each thing the app sells, whenever an app needs to charge for something: never build a card form or hold payment details in the app. Taking payments is a planned milestone with stages and exit tests (best_practices "billing-milestone"): offer the person the stages before connecting, and today only one-time payments are supported (no subscriptions, shipping, taxes or discounts). Free to use; Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card) and Freckles keeps 2% on the free plans and nothing on the Freckles plan.`,
   {},
   async () => takePayments()
 );
@@ -44810,7 +44857,7 @@ tool(
 );
 tool(
   "add_sale_item",
-  `Make something the app sells (a class, a product, a booking deposit) payable from the app's own pages, and get the few lines of HTML that go on the page: a script tag and a button, no server code, no card form. The customer pays on Stripe's page, the money goes straight to the person's own Stripe account (call take_payments first), they come back to the same page afterwards, and the payment shows in list_sales_orders. The price lives here, never in the page, so nobody can change it from a browser. This is stage B of the payments milestone (best_practices "billing-milestone"): rehearse in Stripe's test mode and pass its go-live check before the app is open to customers. Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card); Freckles keeps 2% on the free plans and nothing on Pro. Up to 50 items an app. Can be done before the app is online.`,
+  `Make something the app sells (a class, a product, a booking deposit) payable from the app's own pages, and get the few lines of HTML that go on the page: a script tag and a button, no server code, no card form. The customer pays on Stripe's page, the money goes straight to the person's own Stripe account (call take_payments first), they come back to the same page afterwards, and the payment shows in list_sales_orders. The price lives here, never in the page, so nobody can change it from a browser. This is stage B of the payments milestone (best_practices "billing-milestone"): rehearse in Stripe's test mode and pass its go-live check before the app is open to customers. Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card); Freckles keeps 2% on the free plans and nothing on the Freckles plan. Up to 50 items an app. Can be done before the app is online.`,
   {
     app: appRef,
     name: external_exports.string().describe("What the customer is buying, as they should see it on Stripe's page: 'Haircut', 'Spring workshop'."),

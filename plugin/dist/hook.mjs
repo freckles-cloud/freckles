@@ -7572,13 +7572,13 @@ var BILLING_MILESTONE = {
 
 **What Freckles supports today, plainly (ADR 0026 and the payments how-to).**
 - **One-time payments only.** A person can sell several things, each with a price, and customers pay on Stripe's own page. Freckles does **not yet** support subscriptions or recurring payments, shipping addresses or shipping costs, taxes (nothing is calculated or added), or discounts and coupons. Say so up front instead of promising them. If someone needs a membership or a subscription, say that recurring billing is not built yet; the honest options are a one-time payment for a fixed period that they ask the member to repeat by hand, or waiting. Never build a workaround with another payment service.
-- **The amounts.** Up to 50 items an app; at least 0.50 each; the currencies USD, EUR, GBP, CAD, AUD, NZD, CHF, SEK, NOK and DKK; 1 to 20 of an item per order; one order up to 5,000 in the item's currency (higher only on Pro, with Stripe's form finished). One visitor can start 12 checkouts and one app 300 in ten minutes.
+- **The amounts.** Up to 50 items an app; at least 0.50 each; the currencies USD, EUR, GBP, CAD, AUD, NZD, CHF, SEK, NOK and DKK; 1 to 20 of an item per order; one order up to 5,000 in the item's currency (higher only on the Freckles plan, with Stripe's form finished). One visitor can start 12 checkouts and one app 300 in ten minutes.
 - **Digital goods and access are manual.** The page the customer comes back to proves nothing, and a way for the app to ask "was this paid?" is not built. So never unlock a download or a private page automatically; the person sees the order in list_sales_orders and sends what was bought.
 - **Refunds and disputes are done in the person's own Stripe account**, not in Freckles; Freckles only marks the order as refunded, partly refunded or disputed.
 
 **Stage A: decide what is sold and how.** Ask, one or two at a time: what exactly is sold (each thing, its price, its currency), whether it is a single payment or something that repeats (see the limits above), how many can be bought at once, and what the customer gets and when. Then say back, in plain words:
 - **Who gets the money:** the person's own Stripe account, which they do not need to have beforehand: Stripe's hosted form creates it (or connects the one they already have) in a few minutes. Freckles never holds the money. They do it on Stripe's page; Freckles never sees their bank details.
-- **What it costs:** Stripe charges the person's account its own fee on every payment (the person's Stripe pricing page has the exact figure for their country; "arch-store" has the figure that was read on its date and says what was not checked). On top, Freckles keeps 2% of each payment on the Trial and Free plans and nothing on Pro (call my_plan to see which they are on). There is no monthly charge for taking payments.
+- **What it costs:** Stripe charges the person's account its own fee on every payment (the person's Stripe pricing page has the exact figure for their country; "arch-store" has the figure that was read on its date and says what was not checked). On top, Freckles keeps 2% of each payment on the Trial and Free plans and nothing on the Freckles plan (call my_plan to see which they are on). There is no monthly charge for taking payments.
 - **A decision worth writing down** (see "decisions"): what is sold, in which currency, and that payments go through Freckles' bridge, in docs/decisions.
 - Exit test: the person can say, in one sentence each, what is sold and for how much, who receives the money, and what it costs per sale; and they have said yes to one-time payments only for now.
 
@@ -7629,7 +7629,7 @@ Exit test: a real payment and its refund both seen in list_sales_orders, every s
 - https://vat-one-stop-shop.ec.europa.eu/one-stop-shop_en: the EU One Stop Shop for VAT and the 10,000 EUR yearly threshold for cross-border sales to consumers.
 - https://www.gov.uk/online-and-distance-selling-for-businesses: what a UK seller must tell customers before they buy, the 14-day cancellation right (12 months if never told), and exceptions (the page gives no refund timeframe).
 - https://www.gov.uk/register-for-vat: the UK VAT registration threshold of 90,000 pounds taxable turnover in 12 months.
-- Freckles' own: ADR 0026 and the payments how-to (what the bridge does and does not do, its limits, and that it has never been run against Stripe's real Connect payments), ADR 0019 and pricing.ts (the fee: 2% on Trial and Free, nothing on Pro), and "arch-store" (Stripe's own fee, with its date).
+- Freckles' own: ADR 0026 and the payments how-to (what the bridge does and does not do, its limits, and that it has never been run against Stripe's real Connect payments), ADR 0019, ADR 0029 and pricing.ts (the fee: 2% on Trial and Free, nothing on the Freckles plan), and "arch-store" (Stripe's own fee, with its date).
 
 **What could not be verified, so say it plainly and never guess:** (1) Freckles' bridge has only been tested against fakes, never against Stripe's real Connect accounts in test or live mode, so the first rehearsal may find something; (2) whether a person can rehearse in Stripe's test mode on their own account through Freckles; (3) whether items made in a rehearsal carry over to live; (4) whether Freckles' 2% share comes back to the person on a refund (Stripe's processing fee does not); (5) VAT and sales tax beyond the EU One Stop Shop basics and the UK registration threshold, including US sales tax, digital-goods rules and other countries; (6) the EU and UK refund deadlines, which the pages above do not give; (7) the national equivalent of the consumer-rights pages in the person's country, which you should look up and cite with its fetch date rather than guess; (8) that the exceptions listed above are complete.
 
@@ -7663,7 +7663,7 @@ var HEADER = [
 var MAX_READ = 512 * 1024;
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.9.0" : "dev";
+var COMPANION_VERSION = true ? "0.10.0" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
