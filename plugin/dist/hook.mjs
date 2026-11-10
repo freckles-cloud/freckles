@@ -7578,7 +7578,7 @@ var BILLING_MILESTONE = {
 
 **Stage A: decide what is sold and how.** Ask, one or two at a time: what exactly is sold (each thing, its price, its currency), whether it is a single payment or something that repeats (see the limits above), how many can be bought at once, and what the customer gets and when. Then say back, in plain words:
 - **Who gets the money:** the person's own Stripe account, which they do not need to have beforehand: Stripe's hosted form creates it (or connects the one they already have) in a few minutes. Freckles never holds the money. They do it on Stripe's page; Freckles never sees their bank details.
-- **What it costs:** Stripe charges the person's account its own fee on every payment (the person's Stripe pricing page has the exact figure for their country; "arch-store" has the figure that was read on its date and says what was not checked). On top, Freckles keeps 2% of each payment on the Trial and Free plans and nothing on the Freckles plan (call my_plan to see which they are on). There is no monthly charge for taking payments.
+- **What it costs:** Stripe charges the person's account its own fee on every payment (the person's Stripe pricing page has the exact figure for their country; "arch-store" has the figure that was read on its date and says what was not checked). Taking payments is part of the Freckles plan (call my_plan to see which they are on; on Free, offer upgrade_plan first). Freckles keeps nothing from the payments, and there is no extra charge for taking them.
 - **A decision worth writing down** (see "decisions"): what is sold, in which currency, and that payments go through Freckles' bridge, in docs/decisions.
 - Exit test: the person can say, in one sentence each, what is sold and for how much, who receives the money, and what it costs per sale; and they have said yes to one-time payments only for now.
 
@@ -7663,7 +7663,7 @@ var HEADER = [
 var MAX_READ = 512 * 1024;
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.10.0" : "dev";
+var COMPANION_VERSION = true ? "0.10.1" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();

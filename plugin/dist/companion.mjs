@@ -41474,7 +41474,7 @@ var BILLING_MILESTONE = {
 
 **Stage A: decide what is sold and how.** Ask, one or two at a time: what exactly is sold (each thing, its price, its currency), whether it is a single payment or something that repeats (see the limits above), how many can be bought at once, and what the customer gets and when. Then say back, in plain words:
 - **Who gets the money:** the person's own Stripe account, which they do not need to have beforehand: Stripe's hosted form creates it (or connects the one they already have) in a few minutes. Freckles never holds the money. They do it on Stripe's page; Freckles never sees their bank details.
-- **What it costs:** Stripe charges the person's account its own fee on every payment (the person's Stripe pricing page has the exact figure for their country; "arch-store" has the figure that was read on its date and says what was not checked). On top, Freckles keeps 2% of each payment on the Trial and Free plans and nothing on the Freckles plan (call my_plan to see which they are on). There is no monthly charge for taking payments.
+- **What it costs:** Stripe charges the person's account its own fee on every payment (the person's Stripe pricing page has the exact figure for their country; "arch-store" has the figure that was read on its date and says what was not checked). Taking payments is part of the Freckles plan (call my_plan to see which they are on; on Free, offer upgrade_plan first). Freckles keeps nothing from the payments, and there is no extra charge for taking them.
 - **A decision worth writing down** (see "decisions"): what is sold, in which currency, and that payments go through Freckles' bridge, in docs/decisions.
 - Exit test: the person can say, in one sentence each, what is sold and for how much, who receives the money, and what it costs per sale; and they have said yes to one-time payments only for now.
 
@@ -42059,7 +42059,7 @@ For the agent: tell the person to look for three small dots next to the clock (i
 }
 
 // packages/mcp/src/cloud.ts
-var COMPANION_VERSION = true ? "0.10.0" : "dev";
+var COMPANION_VERSION = true ? "0.10.1" : "dev";
 function agentApp(env = process.env) {
   if (env.CLAUDE_CODE_DESKTOP_APP_VERSION) return "Claude desktop";
   const entry = (env.CLAUDE_CODE_ENTRYPOINT ?? "").toLowerCase();
@@ -42827,7 +42827,7 @@ async function myPlan() {
   const price = `$${(p2.priceMinor / 100).toFixed(0)} a month`;
   if (p2.freckles && p2.standing !== "owner") {
     const f2 = p2.freckles;
-    if (f2.onPlan) return `They're on the Freckles plan: ${price} plus what their apps use, ${apps}, under a spending limit they chose. Every charge is announced two days before. To change the card call manage_billing; to leave, they cancel it on their plan page.`;
+    if (f2.onPlan) return `They're on the Freckles plan: ${price} plus what their apps use, ${apps}, under a spending limit they chose. Every charge is announced two days before. Their plan page has every charge with its receipt, the limit, asking about a charge or a refund, and cancelling: ${c.url}/settings/billing (give it word for word if they ask). To change the card call manage_billing.`;
     const old = f2.proUntil ? ` Their old paid plan runs to ${f2.proUntil.slice(0, 10)} and won't renew.` : "";
     const where = p2.standing === "trial" ? `free 30 days (${p2.trialDaysLeft} left)` : p2.standing === "pro" ? "old paid plan" : "free plan";
     return `They're on the ${where}: ${apps}. The Freckles plan is ${price} plus what their apps use, with a limit they choose.${old}${f2.offered ? " Offer upgrade_plan only if they ask or hit this limit: it gives them a link to their plan page, where they accept the terms, choose a limit and pay on Stripe's own page." : ` ${f2.why ?? "It isn't open yet."}`}`;
@@ -42850,9 +42850,9 @@ async function upgradePlan() {
     const f2 = plan.freckles;
     const price = `$${(plan.priceMinor / 100).toFixed(0)}`;
     if (plan.standing === "owner") return "They run Freckles: everything is already included. Nothing to upgrade.";
-    if (f2.onPlan) return "They're already on the Freckles plan. To change the card call manage_billing.";
+    if (f2.onPlan) return `They're already on the Freckles plan. Their plan page: ${c.url}/settings/billing. To change the card call manage_billing.`;
     if (!f2.offered) return `The Freckles plan can't be started right now: ${f2.why ?? "it isn't open yet."} Nothing was charged.`;
-    return `The paid plan is the Freckles plan. Give the person this link, word for word: ${c.url}/settings#plan
+    return `The paid plan is the Freckles plan. Give the person this link, word for word: ${c.url}/settings/billing/upgrade
 It's ${price} a month plus what their apps use, with a spending limit they choose ($${(f2.defaultLimitMinor / 100).toFixed(0)} to start). On that page they read and accept the terms, choose the limit, and pay the first ${price} on Stripe's own page. Freckles never sees their card. Never accept the terms or choose the limit for them. Nothing has been charged yet. Afterwards call my_plan to confirm.`;
   }
   const { url: url2 } = await api2(c, "POST", "/api/v1/billing/pro");
@@ -42865,7 +42865,7 @@ async function manageBilling() {
   const { url: url2 } = await api2(c, "POST", "/api/v1/billing/manage");
   if (plan?.freckles) {
     return plan.freckles.onPlan ? `Give the person this link, word for word: ${url2}
-On Stripe's page they can change their card and see invoices. To leave the Freckles plan they cancel it on their plan page (${c.url}/settings#plan): it runs to the end of the month already paid for, and nothing is deleted.` : `Give the person this link, word for word: ${url2}
+On Stripe's page they change the card Freckles charges. Everything else is on their plan page, ${c.url}/settings/billing: every charge with its receipt, the spending limit, asking about a charge or a refund, and cancelling (it runs to the end of the month paid for, and nothing is deleted). Cancelling and refunds are theirs to ask for there: never do either for them.` : `Give the person this link, word for word: ${url2}
 On Stripe's page they can change their card and see invoices for their old paid plan, which runs to the end of the month already paid for and won't renew.`;
   }
   return `Give the person this link, word for word: ${url2}
@@ -42875,6 +42875,8 @@ async function takePayments() {
   const c = await signedIn();
   const status = await api2(c, "GET", "/api/v1/payments");
   if (!status.offered) return "Taking payments isn't switched on in Freckles yet. Tell the person it's coming, and don't build payments some other way.";
+  if (status.included === false && !status.connected)
+    return "Taking payments from customers is part of the paid plan, and this person is on Free. Tell them plainly, and offer the paid plan (upgrade_plan gives the link): with it, their app can take payments straight into their own Stripe account. Never accept terms or pay for them, and don't build payments some other way (no card forms, no keys in the app). For now, a link to a payment page they already use elsewhere is fine.";
   if (status.connected) return `Payments are already connected: the person's own Stripe account receives the money. Use add_sale_item for each thing they sell: it gives you the few lines that let the app's own page take payment (or sell_on_page for one link to send around). Freckles keeps ${status.feeBp / 100}% of each payment${status.feeBp ? " (nothing on the Freckles plan)" : ""}; Stripe's own fees are the person's, as for any Stripe account.
 ${BILLING_NEXT.connect}`;
   const { url: url2 } = await api2(c, "POST", "/api/v1/payments/connect");
@@ -42922,7 +42924,7 @@ async function addSaleItem(app, item) {
   return [
     `Now selling ${itemLine(r2.item).slice(2)}.`,
     bridgeSnippet(r2.item),
-    status ? status.connected ? "Payments are connected." : status.offered ? "Payments are NOT connected yet: call take_payments and give the person the link before they publish, or customers will see that it can't take payments yet." : "Taking payments isn't switched on in Freckles yet." : "",
+    status ? status.connected ? "Payments are connected." : status.included === false ? "Taking payments is part of the paid plan, and this person is on Free: offer upgrade_plan before they publish, or customers will see that it can't take payments yet." : status.offered ? "Payments are NOT connected yet: call take_payments and give the person the link before they publish, or customers will see that it can't take payments yet." : "Taking payments isn't switched on in Freckles yet." : "",
     status ? feesLine(status.feeBp) : "",
     BILLING_NEXT.item
   ].filter(Boolean).join("\n");
@@ -43931,7 +43933,7 @@ ${open2.map((n) => `- ${n.id} from ${n.from}${n.part ? ` about ${n.part}` : ""}:
 }
 
 // packages/mcp/src/index.ts
-var VERSION = true ? "0.10.0" : "dev";
+var VERSION = true ? "0.10.1" : "dev";
 var server = new McpServer(
   { name: "freckles", version: VERSION },
   { instructions: INSTRUCTIONS, capabilities: { extensions: { [TQ]: {} } } }
@@ -44834,13 +44836,13 @@ tool("upgrade_plan", UPGRADE_PLAN, {}, async () => upgradePlan());
 tool("go_pro", `The old name of upgrade_plan, kept so older instructions still work; it does exactly the same. Prefer upgrade_plan. ${UPGRADE_PLAN}`, {}, async () => upgradePlan());
 tool(
   "manage_billing",
-  "Give a person on the Freckles plan the link to Stripe's page for changing their card and seeing invoices. The answer says how they leave the plan (on the Freckles plan, from their plan page).",
+  "Give a person on the Freckles plan the link to Stripe's page for changing their card, and their plan page (charges and receipts, the limit, questions about a charge or a refund, cancelling).",
   {},
   async () => manageBilling()
 );
 tool(
   "take_payments",
-  `Connect the person's Stripe account so their apps can take payments. Gives you the link for them to open (Stripe asks for their details on its own page, and the money from their customers goes straight to them), or says it's already ready. Use this, then add_sale_item for each thing the app sells, whenever an app needs to charge for something: never build a card form or hold payment details in the app. Taking payments is a planned milestone with stages and exit tests (best_practices "billing-milestone"): offer the person the stages before connecting, and today only one-time payments are supported (no subscriptions, shipping, taxes or discounts). Free to use; Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card) and Freckles keeps 2% on the free plans and nothing on the Freckles plan.`,
+  `Connect the person's Stripe account so their apps can take payments (part of the paid plan: on Free it says so, and you offer upgrade_plan). Gives you the link for them to open (Stripe asks for their details on its own page, and the money from their customers goes straight to them), or says it's already ready. Use this, then add_sale_item for each thing the app sells, whenever an app needs to charge for something: never build a card form or hold payment details in the app. Taking payments is a planned milestone with stages and exit tests (best_practices "billing-milestone"): offer the person the stages before connecting, and today only one-time payments are supported (no subscriptions, shipping, taxes or discounts). Free to use; Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card) and Freckles keeps 2% on the free plans and nothing on the Freckles plan.`,
   {},
   async () => takePayments()
 );
@@ -44857,7 +44859,7 @@ tool(
 );
 tool(
   "add_sale_item",
-  `Make something the app sells (a class, a product, a booking deposit) payable from the app's own pages, and get the few lines of HTML that go on the page: a script tag and a button, no server code, no card form. The customer pays on Stripe's page, the money goes straight to the person's own Stripe account (call take_payments first), they come back to the same page afterwards, and the payment shows in list_sales_orders. The price lives here, never in the page, so nobody can change it from a browser. This is stage B of the payments milestone (best_practices "billing-milestone"): rehearse in Stripe's test mode and pass its go-live check before the app is open to customers. Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card); Freckles keeps 2% on the free plans and nothing on the Freckles plan. Up to 50 items an app. Can be done before the app is online.`,
+  `Make something the app sells (a class, a product, a booking deposit) payable from the app's own pages, and get the few lines of HTML that go on the page: a script tag and a button, no server code, no card form. The customer pays on Stripe's page, the money goes straight to the person's own Stripe account (call take_payments first), they come back to the same page afterwards, and the payment shows in list_sales_orders. The price lives here, never in the page, so nobody can change it from a browser. This is stage B of the payments milestone (best_practices "billing-milestone"): rehearse in Stripe's test mode and pass its go-live check before the app is open to customers. Stripe charges the person its own fee on every payment (roughly 1.5 to 3% plus a few cents, depending on country and card); Taking payments is part of the paid plan; Freckles keeps nothing from the payments on the Freckles plan. Up to 50 items an app. Can be done before the app is online.`,
   {
     app: appRef,
     name: external_exports.string().describe("What the customer is buying, as they should see it on Stripe's page: 'Haircut', 'Spring workshop'."),
